@@ -1,0 +1,2054 @@
+---
+title: "Angler surveys analysis"
+author: "Egle & Asta"
+date: "21/12/2021"
+output: html_document
+---
+
+### libraries
+
+```{r setup, include=T, eval = T, echo = T, message = F, warning = F}
+
+rm(list = ls()) # clear memory
+
+library(gplots)
+library(dplyr)
+library(tidyverse)
+library(lubridate)
+library(data.table)
+library(nlme)
+library(mgcv)
+library(gamm4)
+library(statmod)
+library(MuMIn)
+library(tweedie)
+library(effects)
+library(hydroTSM)
+library(ggplot2)
+library(rcompanion)
+library(modEvA)
+library(sjPlot)
+library(broom.mixed)
+library(jtools)
+library(ggstance)
+
+```
+
+<!-- ### glm to estimate catch per trip -->
+<!-- The Tweedie package allows you to fit a glm with any power function and any power link. In the glm family call, var.power is the α parameter so that var.power=1.1 specifies α=1.1. The var.power refers to exponent of the glm variance function, so that var.power=0 specifies a normal family, var.power=1 means Poisson family, var.power=2 means gamma family, var.power=3 means inverse Gaussian family and so on. Values between 0 and 1 are not permitted but virtually anything else in allowed. -->
+
+<!-- link.power=0 specifies a log-link. The log link exponentiates the linear predictors. It does not log transform the outcome variable. -->
+
+<!-- The Tweedie (1984) distribution has nonnegative support and can have a discrete mass at zero, making it useful to model responses that are a mixture of zeros and positive values.  -->
+
+<!-- One of the fundamental motivations for generalized linear models (GLMs) is that they model the data as it is instead of transforming it. No transformation, either by you or by the model. -->
+### load data
+
+Data from recreational catch surveys
+
+```{r}
+
+load(file = "recrCatch_data.RData")
+str(catch_id)
+
+```
+
+### ### General linear models
+
+#Roach 
+
+
+```{r include=T, eval = T, echo = T, message = F, warning = F}
+
+#check to see data balance. Done here for this species only, but same code to be used for other species
+
+roach <- catch_id %>% dplyr::select(year, season, gear_type, gear_no, method, duration, Roach)
+
+xtabs( ~ gear_type + season, data=roach)
+
+
+
+##########---MODEL----#####################
+
+Roach_mod_full <- glm(Roach ~ year + season + method + duration + gear_no + gear_type, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+
+summary(Roach_mod_full) 
+AICtweedie(Roach_mod_full) # 2044
+modEvA::Dsquared(Roach_mod_full)*100   #8.8 % explained deviance
+
+drop1(Roach_mod_full, test="F") # model which includes gear type is signif different from the one which does not. So check model with gear type 
+
+# since winter gear type fully overlaps with winter season, it takes variation away from winter and perhaps from season. What if we run the model without gear_type, will season be important?
+Roach_mod_full2 <- glm(Roach ~ year + season + method + duration + gear_no, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+
+drop1(Roach_mod_full2, test="F") # still not, because now it is the ice-fishing that is important (method). This is because there is higher catch on ice, but all other seasons are not differnet
+
+#plot roach catches by gear type
+ggplot(catch_id, aes(x=gear_type, y=Roach)) + 
+    geom_point() + ylab("catches, g") +xlab("") +ggtitle("Roach recreational catches per gear type") +
+    theme_bw()
+
+#model including intercept and gear type
+
+Roach_mod_b <- glm(Roach ~ 1 + gear_type, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(Roach_mod_b)
+AICtweedie(Roach_mod_b)  # 2030
+modEvA::Dsquared(Roach_mod_b)*100   #8.3 % explained deviance
+
+
+#model with season only 
+Roach_mod_s <- glm(Roach ~ 1 + season, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(Roach_mod_s)
+AICtweedie(Roach_mod_s)  # 2044
+modEvA::Dsquared(Roach_mod_s)*100  #4.7 % explained deviance
+
+
+#Roach_mod_b can be considered as best model, AIC is lower (difference in explained dev is basically none)
+Roach_mod_best<-Roach_mod_b
+
+#extract coef of the best model
+Roach_best_coef <- data.frame(coef(summary(Roach_mod_best)))
+Roach_best_coef$Parameter<-c("Intercept", "Gear.type_Pludine", "Gear.type_Spiningas", "Gear.type_Ziemine.meskere")
+Roach_best_coef$Species<-"Roach"
+Roach_best_coef$lowCI_2.5<-""
+Roach_best_coef$upCI_97.5<-""
+colnames(Roach_best_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+#extract coef of the full model 
+
+Roach_full_coef<-data.frame(coef(summary(Roach_mod_full)))
+Roach_full_coef$Parameter<-c("Intercept", "2017", "2020", "2021", "spring", "summer","winter" , "methodBoat", "duration", "gear_no",  "Gear.type_Pludine", "Gear.type_Spiningas")
+Roach_full_coef$Species<-"Roach"
+Roach_full_coef$lowCI_2.5<-""
+Roach_full_coef$upCI_97.5<-""
+colnames(Roach_full_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+##as season is not signif (and we don't have data for other factors for prediction) use model with intercept only 
+
+Roach_mod_0 <- glm(Roach ~ 1, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0))
+summary(Roach_mod_0)
+AICtweedie(Roach_mod_0) # 2056
+
+#extract coef of the model used for prediction (0 model, intercept only)
+Roach_0_coef <- data.frame(coef(summary(Roach_mod_0)))
+Roach_0_coef$Parameter<-"Intercept"
+Roach_0_coef$Species<-"Roach"
+Roach_0_CI <- confint(Roach_mod_0) 
+
+Roach_0_coef$lowCI_2.5<-Roach_0_CI[1]
+Roach_0_coef$upCI_97.5<-Roach_0_CI[2]
+colnames(Roach_0_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+
+##########---PREDICT----#####################
+
+## extract 95% intervals for model variables 
+Roach_coef <- coef(summary(Roach_mod_0)) 
+Roach_CI <- confint(Roach_mod_0)  
+
+# actual catch in grams 
+exp(Roach_CI)
+
+## make a table 
+t1 <- data.frame(coef(summary(Roach_mod_0)))
+t2 <- data.frame(confint(Roach_mod_0))
+t <- cbind(t1, t2[1,], t2[2,])
+colnames(t)<-c("Estimate, g", "Std.Error", "t.value", "p value", "lowCI_2.5%", "upCI_97.5%")
+
+#table with grams
+t[1]<-exp(t[1])
+t[2]<-exp(t[2])
+t[5]<-exp(t[5])
+t[6]<-exp(t[6])
+
+#add species name
+
+t[7]<-"Roach"
+colnames(t)[7]<-"Species"
+
+knitr::kable(t, format = "simple", digits = 3)
+
+```
+
+
+### Pikeperch 
+
+
+```{r include=T, eval = T, echo = T, message = F, warning = F}
+
+##########---MODEL----#####################
+Pikeperch_mod_full <- glm(Pikeperch ~ year + season + method + duration + gear_no + gear_type, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(Pikeperch_mod_full)
+AICtweedie(Pikeperch_mod_full)  # 1328
+modEvA::Dsquared(Pikeperch_mod_full)*100  #73.4 % explained deviance
+drop1(Pikeperch_mod_full, test="F")
+
+# for pikeperch significant - season,duration, method, gear no
+
+Pikeperch_mod_b <- glm(Pikeperch ~ season + duration + gear_no +method,data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(Pikeperch_mod_b)  #method is no longer signif
+AICtweedie(Pikeperch_mod_b)  #1 325 
+modEvA::Dsquared(Pikeperch_mod_b)*100  #69 % explained deviance
+
+#consider Pikeperch_mod_b as the best model 
+
+Pikeperch_mod_best<-Pikeperch_mod_b
+
+#extract coef of the best model
+Pikeperch_best_coef <- data.frame(coef(summary(Pikeperch_mod_best)))
+Pikeperch_best_coef$Parameter<-c("Intercept", "spring", "summer", "winter", "duration", "gear no", "methodBoat")
+Pikeperch_best_coef$Species<-"Pikeperch"
+Pikeperch_best_CI <- confint(Pikeperch_mod_best) 
+
+Pikeperch_best_CI<-Pikeperch_best_CI[-7,]
+Pikeperch_best_coef<-cbind(Pikeperch_best_coef, Pikeperch_best_CI)
+
+colnames(Pikeperch_best_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+#extract coef of the full model 
+Pikeperch_full_coef<-data.frame(coef(summary(Pikeperch_mod_full)))
+Pikeperch_full_coef$Parameter<-c("Intercept", "2017", "2020", "2021", "spring", "summer","winter" , "methodBoat", "duration", "gear_no",  "Gear.type_Pludine", "Gear.type_Spiningas")
+Pikeperch_full_coef$Species<-"Pikeperch"
+
+Pikeperch_full_coef$lowCI_2.5<-""
+Pikeperch_full_coef$upCI_97.5<-""
+colnames(Pikeperch_full_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+## we don't have data on duration, gear or method in all the fishing events, so we can't use this model for catch prediction. So we build a simpler model using only variables that are available to us (i.e. season). 
+# then we compare how much worse this simpler model is, using pseudoR2 and explained deviance 
+
+Pikeperch_mod_s <-  glm(Pikeperch ~ 1 + season, data= catch_id, family = tweedie(var.power = 1.1, link.power = 0))
+summary(Pikeperch_mod_s)
+
+#extract coef of the season only model
+Pikeperch_s_coef <- data.frame(coef(summary(Pikeperch_mod_s)))
+Pikeperch_s_coef$Parameter<-c("Intercept", "spring", "summer", "winter")
+Pikeperch_s_coef$Species<-"Pikeperch"
+Pikperch_s_CI <- confint(Pikeperch_mod_s) 
+Pikeperch_s_coef<-cbind(Pikeperch_s_coef, Pikperch_s_CI)
+
+colnames(Pikeperch_s_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+
+##########---PREDICT----#####################
+
+## make a table with fit (50%), lower, upper, t values and P
+PredictPikeperch_s <- as.data.frame(Effect(c('season'),Pikeperch_mod_s))
+Pikeperch_s_coef <- coef(summary(Pikeperch_mod_s))
+
+t[8]<-""
+colnames(t)[8]<-"Parameter"
+t[8]<-"Intercept"
+rownames(t) <- NULL
+temp <- t
+
+
+pikep<-cbind(PredictPikeperch_s[,2], PredictPikeperch_s[,3], Pikeperch_s_coef[,3], Pikeperch_s_coef[,4], PredictPikeperch_s[,4], PredictPikeperch_s[,5], "Pikeperch", PredictPikeperch_s[,1])
+pikep[,8]<-c("autumn", "spring", "summer", "winter")
+rownames(pikep)<-NULL
+colnames(pikep)<-colnames(t)<-c("Estimate, g", "Std.Error", "t.value", "p value", "lowCI_2.5%", "upCI_97.5%", "Species", "Parameter")
+
+
+temp<-rbind(temp, pikep)
+t<-temp
+
+#save(file="PredictPikeperch_s_glmUpd.Rdata", PredictPikeperch_s)
+
+
+##########---COMPARE----#####################
+#compare the best model and the one to be used for prediction
+
+anova(Pikeperch_mod_s, Pikeperch_mod_best, test="F")
+#p<0.05, so we can reject the null hypothesis that simpler model (mod_s) is better 
+#it's not the link function but the family that determines whether you should use Chi-square or F (specifically, whether the scale parameter is fixed [Poisson, binomial] - use Chisq, or estimated [Gaussian, Gamma, quasi-likelihood fits-use F 
+
+#For comparisons with AIC, etc., to be valid, both models must have the same data, without transformations, use the same dependent variable, and be fit with the same method. They do not need to be nested.
+
+#estimate explained deviance and pseudoR2 for model comparison (how much the best model is better)
+DescTools::PseudoR2(Pikeperch_mod_best, which="all")
+DescTools::PseudoR2(Pikeperch_mod_best, which="Efron")   #0.41932   
+
+DescTools::PseudoR2(Pikeperch_mod_s, which="all")
+DescTools::PseudoR2(Pikeperch_mod_s, which="Efron")   #0.02625121    
+
+modEvA::Dsquared(Pikeperch_mod_best)*100   #69.1487
+#just to make sure we understand, we estimate explained deviance another way: X2/Null deviance, where X2=Null deviance-residual deviance. 
+expldev<-(381303-117637)/381303  #69%
+
+modEvA::Dsquared(Pikeperch_mod_s)*100   #27.79679
+
+plot_model(Pikeperch_mod_best, ci_level=0.9)
+plot_model(Pikeperch_mod_s)
+
+plot_coefs(Pikeperch_mod_s, Pikeperch_mod_best, model.names = c("Season only", "Best"), legend.title = "Pikeperch model")
+
+#plot_coefs(Pikeperch_mod_s, Pikeperch_mod_best, model.names = c("Season only", "Best"), plot.distributions = TRUE, rescale.distributions = TRUE)
+
+plot(allEffects(Pikeperch_mod_s))
+
+
+```
+
+## Perch 
+
+```{r}
+
+Perch_mod_full <- glm(Perch ~ year + season + method + duration + gear_no + gear_type, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(Perch_mod_full)  # signif: year, season, gear type, duration
+AICtweedie(Perch_mod_full)  #5152
+modEvA::Dsquared(Perch_mod_full)*100   #27.01885
+
+
+#model with signif factors
+Perch_mod_2 <- glm(Perch ~ year + season + duration + gear_type, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(Perch_mod_2)  
+AICtweedie(Perch_mod_2)  #5177 higher AIC (and expl dev here is a little bit lower) so consider Perch_mod_full as the best
+modEvA::Dsquared(Perch_mod_2)*100 #25%
+
+
+Perch_mod_best<-Perch_mod_full
+
+
+#extract coef of the best model
+Perch_best_coef <- data.frame(coef(summary(Perch_mod_best)))
+Perch_best_coef$Parameter<-c("Intercept", "2017", "2020","2021", "spring", "summer", "winter", "methodBoat", "duration", "gear no", "Gear.type_Pludine", 	"Gear.type_Spiningas")
+Perch_best_coef$Species<-"Perch"
+
+Perch_best_coef$lowCI_2.5<-""
+Perch_best_coef$upCI_97.5<-""
+colnames(Perch_best_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+#however, we only have seasons for anglers, so make model with seasons only 
+Perch_mod_s <-  glm(Perch ~ 1 + season, data= catch_id, family = tweedie(var.power = 1.1, link.power = 0))
+summary(Perch_mod_s)
+AICtweedie(Perch_mod_s) #5565
+
+#extract coef of the season only model
+Perch_s_coef <- data.frame(coef(summary(Perch_mod_s)))
+Perch_s_coef$Parameter<-c("Intercept", "spring", "summer", "winter")
+Perch_s_coef$Species<-"Perch"
+Perch_s_CI <- confint(Perch_mod_s) 
+Perch_s_coef<-cbind(Perch_s_coef, Perch_s_CI)
+
+colnames(Perch_s_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+
+##########---PREDICT----#####################
+#predict catches per trip (in g)
+PredictPerch_s <- as.data.frame(Effect(c('season'),Perch_mod_s))
+Perch_s_coef <- coef(summary(Perch_mod_s)) #Ideti i lentele 
+
+#modify so that you can add to the main table with all species and parameters
+
+perch<-cbind(PredictPerch_s[,2], PredictPerch_s[,3], Perch_s_coef[,3], Pikeperch_s_coef[,4], PredictPerch_s[,4], PredictPerch_s[,5], "Perch", PredictPerch_s[,1])
+
+perch[,8]<-c("autumn", "spring", "summer", "winter")
+
+rownames(perch)<-NULL
+
+colnames(perch)<-colnames(t)<-c("Estimate, g", "Std.Error", "t.value", "p value", "lowCI_2.5%", "upCI_97.5%", "Species", "Parameter")
+
+temp2<-rbind(t, perch)
+
+t<-temp2
+
+#save(file="PredictPerch_s_glm.Rdata", PredictPerch_s)
+
+
+##########---COMPARE----#####################
+#compare the best model and the one to be used for prediction
+
+#estimate explained deviance and pseudoR2 for model comparison (how much the best model is better)
+DescTools::PseudoR2(Perch_mod_best, which="Efron")   #0.1038413       
+DescTools::PseudoR2(Perch_mod_s, which="Efron")   #0.01348987       
+
+modEvA::Dsquared(Perch_mod_best)*100   #27.01885
+modEvA::Dsquared(Perch_mod_s)*100   #5.132855
+
+
+# plot_model(Perch_mod_best)
+# plot_model(Perch_mod_s)
+# 
+# plot_coefs(Perch_mod_s)
+# plot_coefs(Perch_mod_best, omit.coefs = c("(gear type"))
+# 
+# plot_coefs(Perch_mod_s, Perch_mod_best, model.names = c("Season only", "Best"), legend.title = "Perch model")
+# 
+# plot(allEffects(Perch_mod_s))
+
+
+```
+
+#Bream 
+
+```{r}
+##########---MODEL----#####################
+
+Bream_mod_full <- glm(Bream ~ year + season + method + duration + gear_no + gear_type, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )  
+summary(Bream_mod_full)   # gear type, season and duration signif
+AICtweedie(Bream_mod_full)  #3100
+modEvA::Dsquared(Bream_mod_full)*100 #24.92 % expl dev
+
+#model with signif factors
+Bream_mod_2 <- glm(Bream ~ season + duration + gear_type, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(Bream_mod_2)
+AICtweedie(Bream_mod_2) #3100
+modEvA::Dsquared(Bream_mod_2)*100 #23.6628
+#consider Bream_mod_2 as best - AIC is the same, includes less factors (significant ones), expl dev is basically the same
+
+Bream_mod_best<-Bream_mod_2
+
+#extract coef of the best model
+Bream_best_coef <- data.frame(coef(summary(Bream_mod_best)))
+Bream_best_coef$Parameter<-c("Intercept", "spring", "summer", "winter", "duration", "Gear.type_Pludine", "Gear.type_Spiningas")
+Bream_best_coef$Species<-"Bream"
+Bream_best_CI <- confint(Bream_mod_best) #why cannot estimate?
+
+Bream_best_coef$lowCI_2.5<-""
+Bream_best_coef$upCI_97.5<-""
+
+colnames(Bream_best_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+#extract coef of the full model 
+
+Bream_full_coef<-data.frame(coef(summary(Bream_mod_full)))
+Bream_full_coef$Parameter<-c("Intercept", "2017", "2020", "2021", "spring", "summer","winter" , "methodBoat", "duration", "gear_no",  "Gear.type_Pludine", "Gear.type_Spiningas")
+Bream_full_coef$Species<-"Bream"
+Bream_full_CI <- confint(Bream_mod_full) #why cannot estimate CI .?
+
+Bream_full_coef$lowCI_2.5<-""
+Bream_full_coef$upCI_97.5<-""
+colnames(Bream_full_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+
+#however, we only have seasons for anglers, so make model with seasons only
+Bream_mod_s <-  glm(Bream ~ 1 + season, data= catch_id, family = tweedie(var.power = 1.1, link.power = 0))
+summary(Bream_mod_s)
+AICtweedie(Bream_mod_s)  #3198
+
+#extract coef of the seaosn only model
+
+Bream_s_coef <- data.frame(coef(summary(Bream_mod_s)))
+Bream_s_coef$Parameter<-c("Intercept", "spring", "summer", "winter")
+Bream_s_coef$Species<-"Bream"
+Bream_s_CI <- confint(Bream_mod_s) 
+Bream_s_coef<-cbind(Bream_s_coef, Bream_s_CI)
+
+colnames(Bream_s_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+
+##########---PREDICT----#####################
+#predict catches per trip (in g)
+
+PredictBream_s <- as.data.frame(Effect(c('season'),Bream_mod_s))
+Bream_s_coef <- coef(summary(Bream_mod_s)) 
+
+#modify so that you can add to the main table with all species and parameters
+bream<-cbind(PredictBream_s[,2], PredictBream_s[,3], Bream_s_coef[,3], Bream_s_coef[,4], PredictBream_s[,4], PredictBream_s[,5], "Bream", PredictBream_s[,1])
+
+bream[,8]<-c("autumn", "spring", "summer", "winter")
+rownames(bream)<-NULL
+colnames(bream)<-colnames(t)<-c("Estimate, g", "Std.Error", "t.value", "p value", "lowCI_2.5%", "upCI_97.5%", "Species", "Parameter")
+temp3<-rbind(t, bream)
+t<-temp3
+
+#save
+#save(file="PredictBream_s_glm.Rdata", PredictBream_s)
+
+
+##########---COMPARE----#####################
+#compare the best model and the one to be used for prediction
+
+#estimate explained deviance and pseudoR2 for model comparison (how much the best model is better)
+DescTools::PseudoR2(Bream_mod_best, which="Efron")   #0.05734383      
+
+DescTools::PseudoR2(Bream_mod_s, which="Efron")   #0.02019217      
+
+modEvA::Dsquared(Bream_mod_best)*100   #23.6628
+modEvA::Dsquared(Bream_mod_s)*100   #11.3556
+
+#jtools::effect_plot(Bream_mod_best, pred = season, interval = TRUE,plot.points = TRUE)
+
+
+```
+
+#Silverbream
+
+```{r}
+
+##########---MODEL----#####################
+
+S_Bream_mod_full <- glm(Silver_bream ~ year + season + method + duration + gear_no + gear_type, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(S_Bream_mod_full)  # season and method signif
+AICtweedie(S_Bream_mod_full)  #1629
+modEvA::Dsquared(S_Bream_mod_full)*100   #39.31538
+
+#model with signif factors only
+S_Bream_mod_2 <- glm(Silver_bream ~ season + method, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+
+summary(S_Bream_mod_2)
+AICtweedie(S_Bream_mod_2)   #1639 
+modEvA::Dsquared(S_Bream_mod_2)*100 #21.24141  #since here AIC is higher and explained deviance is lower, consider S_Bream_mod_full as best model
+
+S_Bream_mod_best<-S_Bream_mod_full
+
+
+#extract coef of the best model
+S_Bream_best_coef <- data.frame(coef(summary(S_Bream_mod_best)))
+S_Bream_best_coef$Parameter<-c("Intercept", "2017", "2020", "2021", "spring", "summer", "winter", "methodBoat", "duration", "gear no", "Gear.type_Pludine", "Gear.type_Spiningas")
+S_Bream_best_coef$Species<-"Silver bream"
+S_Bream_best_coef$lowCI_2.5<-""
+S_Bream_best_coef$upCI_97.5<-""
+
+colnames(S_Bream_best_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+#however, we only have seasons for anglers, so make model with seasons only 
+
+SBream_mod_s <-  glm(Silver_bream ~ 1 + season, data= catch_id, family = tweedie(var.power = 1.1, link.power = 0))
+
+summary(SBream_mod_s)
+AICtweedie(SBream_mod_s)  #1637
+
+#extract coef of the seaosn only model
+
+SBream_s_coef <- data.frame(coef(summary(SBream_mod_s)))
+SBream_s_coef$Parameter<-c("Intercept", "spring", "summer", "winter")
+SBream_s_coef$Species<-"Silver bream"
+SBream_s_CI <- confint(SBream_mod_s) 
+SBream_s_coef<-cbind(SBream_s_coef, SBream_s_CI)
+
+colnames(SBream_s_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+##########---PREDICT----#####################
+#predict catches per trip (in g)
+PredictSBream_s <- as.data.frame(Effect(c('season'),SBream_mod_s))
+SBream_s_coef <- coef(summary(SBream_mod_s))  
+
+#modify so that you can add to the main table with all species and parameters
+
+sbream<-cbind(PredictSBream_s[,2], PredictSBream_s[,3], SBream_s_coef[,3], SBream_s_coef[,4], PredictSBream_s[,4], PredictSBream_s[,5], "Silver bream", PredictSBream_s[,1])
+
+sbream[,8]<-c("autumn", "spring", "summer", "winter")
+
+rownames(sbream)<-NULL
+
+colnames(sbream)<-colnames(t)<-c("Estimate, g", "Std.Error", "t.value", "p value", "lowCI_2.5%", "upCI_97.5%", "Species", "Parameter")
+
+temp4<-rbind(t, sbream)
+
+t<-temp4
+
+#save
+#save(file="PredictSBream_s_glm.Rdata", PredictSBream_s)
+
+
+
+##########---COMPARE----#####################
+#compare the best model and the one to be used for prediction
+
+#estimate explained deviance and pseudoR2 for model comparison (how much the best model is better)
+DescTools::PseudoR2(S_Bream_mod_best, which="Efron")   #0.159815     
+DescTools::PseudoR2(SBream_mod_s, which="Efron")   #0.02003207      
+
+modEvA::Dsquared(S_Bream_mod_best)*100   #39.31538
+modEvA::Dsquared(SBream_mod_s)*100   #21.12033
+
+```
+
+
+#Prussian carp
+
+```{r}
+##########---MODEL----#####################
+
+Karosas_mod_full <- glm(Karosas ~ year + season + method + duration + gear_no + gear_type, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(Karosas_mod_full)  # season and duration signif
+AICtweedie(Karosas_mod_full)  #2164
+modEvA::Dsquared(Karosas_mod_full)*100   #53
+
+
+#model with signif factors only
+Karosas_mod_2 <- glm(Karosas ~ season + duration, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(Karosas_mod_2)
+AICtweedie(Karosas_mod_2)   #2205 
+modEvA::Dsquared(Karosas_mod_2)*100 #36  #since here AIC is higher and explained deviance is lower, consider Karosas_mod_full as best model
+
+Karosas_mod_best<-Karosas_mod_full
+
+#extract coef of the best model
+Karosas_best_coef <- data.frame(coef(summary(Karosas_mod_best)))
+Karosas_best_coef$Parameter<-c("Intercept", "2017", "2020", "2021", "spring", "summer", "winter", "methodBoat", "duration", "gear no", "Gear.type_Pludine", "Gear.type_Spiningas")
+Karosas_best_coef$Species<-"Crussian carp"
+Karosas_best_coef$lowCI_2.5<-""
+Karosas_best_coef$upCI_97.5<-""
+
+colnames(Karosas_best_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+#however, we only have seasons for anglers, so make model with seasons only 
+Karosas_mod_s <-  glm(Karosas ~ 1 + season, data= catch_id, family = tweedie(var.power = 1.1, link.power = 0))
+summary(Karosas_mod_s)
+AICtweedie(Karosas_mod_s)  #2220
+
+
+#extract coef of the seaosn only model
+
+Karosas_s_coef <- data.frame(coef(summary(Karosas_mod_s)))
+Karosas_s_coef$Parameter<-c("Intercept", "spring", "summer", "winter")
+Karosas_s_coef$Species<-"Crussian carp"
+Karosas_s_coef$lowCI_2.5<-""
+Karosas_s_coef$upCI_97.5<-""
+
+colnames(Karosas_s_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+##########---PREDICT----#####################
+#predict catches per trip (in g)
+PredictKarosas_s <- as.data.frame(Effect(c('season'),Karosas_mod_s))
+Karosas_s_coef <- coef(summary(Karosas_mod_s))  
+
+
+#modify so that you can add to the main table with all species and parameters
+
+karosas<-cbind(PredictKarosas_s[,2], PredictKarosas_s[,3], Karosas_s_coef[,3], Karosas_s_coef[,4], PredictKarosas_s[,4], PredictKarosas_s[,5], "Crucian carp", PredictKarosas_s[,1])
+
+karosas[,8]<-c("autumn", "spring", "summer", "winter")
+
+rownames(karosas)<-NULL
+
+colnames(karosas)<-c("Estimate, g", "Std.Error", "t.value", "p value", "lowCI_2.5%", "upCI_97.5%", "Species", "Parameter")
+
+temp5<-rbind(t, karosas)
+
+t<-temp5
+
+#save
+#save(file="PredictKarosas_s_glm.Rdata", PredictKarosas_s)
+
+#########---COMPARE----#####################
+#compare the best model and the one to be used for prediction
+
+#estimate explained deviance and pseudoR2 for model comparison (how much the best model is better)
+DescTools::PseudoR2(Karosas_mod_best, which="Efron")   #0.2184597      
+
+DescTools::PseudoR2(Karosas_mod_s, which="Efron")   #0.04969552      
+
+modEvA::Dsquared(Karosas_mod_best)*100   #53.04851
+modEvA::Dsquared(Karosas_mod_s)*100   #30.82394
+
+```
+
+#Vimba bream 
+
+```{r}
+
+##########---MODEL----#####################
+
+Vimba_mod_full <- glm(Žiobris ~ year + season + method + duration + gear_no + gear_type, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(Vimba_mod_full)  # season and method signif
+AICtweedie(Vimba_mod_full)  #1261
+modEvA::Dsquared(Vimba_mod_full)*100   #48
+
+
+#model with signif factors only
+Vimba_mod_2 <- glm(Žiobris ~ season + method, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(Vimba_mod_2)
+AICtweedie(Vimba_mod_2)   #1260
+modEvA::Dsquared(Vimba_mod_2)*100 #17  #since here AIC is almost the same, but and explained deviance is much lower, consider Vimba_mod_full as best model
+
+Vimba_mod_best<-Vimba_mod_full
+
+#extract coef of the best model
+Vimba_best_coef <- data.frame(coef(summary(Vimba_mod_best)))
+Vimba_best_coef$Parameter<-c("Intercept", "2017", "2020", "2021", "spring", "summer", "winter", "methodBoat", "duration", "gear no", "Gear.type_Pludine", "Gear.type_Spiningas")
+Vimba_best_coef$Species<-"Vimba bream"
+Vimba_best_coef$lowCI_2.5<-""
+Vimba_best_coef$upCI_97.5<-""
+
+colnames(Vimba_best_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+#however, we only have seasons for anglers, so make model with seasons only 
+Vimba_mod_s <-  glm(Žiobris ~ 1 + season, data= catch_id, family = tweedie(var.power = 1.1, link.power = 0))
+summary(Vimba_mod_s)
+AICtweedie(Vimba_mod_s)  #1259
+
+#extract coef of the seaosn only model
+
+Vimba_s_coef <- data.frame(coef(summary(Vimba_mod_s)))
+Vimba_s_coef$Parameter<-c("Intercept", "spring", "summer", "winter")
+Vimba_s_coef$Species<-"Vimba bream"
+Vimba_s_coef$lowCI_2.5<-""
+Vimba_s_coef$upCI_97.5<-""
+
+colnames(Vimba_s_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+
+##########---PREDICT----#####################
+#predict catches per trip (in g)
+PredictVimba_s <- as.data.frame(Effect(c('season'),Vimba_mod_s))
+Vimba_s_coef <- coef(summary(Vimba_mod_s))  
+
+
+#modify so that you can add to the main table with all species and parameters
+
+vimba<-cbind(PredictVimba_s[,2], PredictVimba_s[,3], Vimba_s_coef[,3], Vimba_s_coef[,4], PredictVimba_s[,4], PredictVimba_s[,5], "Vimba bream", PredictVimba_s[,1])
+
+vimba[,8]<-c("autumn", "spring", "summer", "winter")
+
+rownames(vimba)<-NULL
+
+colnames(vimba)<-c("Estimate, g", "Std.Error", "t.value", "p value", "lowCI_2.5%", "upCI_97.5%", "Species", "Parameter")
+
+temp5<-rbind(t, vimba)
+
+t<-temp5
+#save
+#save(file="PredictVimba_s_glm.Rdata", PredictVimba_s)
+
+#########---COMPARE----#####################
+#compare the best model and the one to be used for prediction
+
+#estimate explained deviance and pseudoR2 for model comparison (how much the best model is better)
+DescTools::PseudoR2(Vimba_mod_best, which="Efron")   #0.1313305       
+DescTools::PseudoR2(Vimba_mod_s, which="Efron")   #0.007051517       
+
+modEvA::Dsquared(Vimba_mod_best)*100   #48
+modEvA::Dsquared(Vimba_mod_s)*100   #14
+
+```
+
+#Asp 
+
+```{r}
+
+##########---MODEL----#####################
+
+Asp_mod_full <- glm(Salatis ~ year + season + method + duration + gear_no + gear_type, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(Asp_mod_full)  # season and duration signif
+AICtweedie(Asp_mod_full)  #1036
+modEvA::Dsquared(Asp_mod_full)*100   #38
+
+
+#model with signif factors only
+Asp_mod_2 <- glm(Salatis ~ season + duration, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(Asp_mod_2)
+AICtweedie(Asp_mod_2)   #1023
+modEvA::Dsquared(Asp_mod_2)*100 #30  #since here AIC is much lower, consider Asp_mod_2 as best model 
+
+Asp_mod_best<-Asp_mod_2
+
+#extract coef of the best model
+Asp_best_coef <- data.frame(coef(summary(Asp_mod_best)))
+Asp_best_coef$Parameter<-c("Intercept", "spring", "summer", "winter", "duration")
+Asp_best_coef$Species<-"Asp"
+Asp_best_coef$lowCI_2.5<-""
+Asp_best_coef$upCI_97.5<-""
+
+colnames(Asp_best_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+
+#extract coef of the full model 
+
+Asp_full_coef<-data.frame(coef(summary(Asp_mod_full)))
+Asp_full_coef$Parameter<-c("Intercept", "2017", "2020", "2021", "spring", "summer","winter" , "methodBoat", "duration", "gear_no",  "Gear.type_Pludine", "Gear.type_Spiningas")
+Asp_full_coef$Species<-"Asp"
+Asp_full_coef$lowCI_2.5<-""
+Asp_full_coef$upCI_97.5<-""
+colnames(Asp_full_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+
+#however, we only have seasons for anglers, so make model with seasons only 
+Asp_mod_s <-  glm(Salatis ~ 1 + season, data= catch_id, family = tweedie(var.power = 1.1, link.power = 0))
+summary(Asp_mod_s)
+AICtweedie(Asp_mod_s)  #1021
+
+#extract coef of the seaosn only model
+
+Asp_s_coef <- data.frame(coef(summary(Asp_mod_s)))
+Asp_s_coef$Parameter<-c("Intercept", "spring", "summer", "winter")
+Asp_s_coef$Species<-"Asp"
+Asp_s_coef$lowCI_2.5<-""
+Asp_s_coef$upCI_97.5<-""
+
+colnames(Asp_s_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+##########---PREDICT----#####################
+#predict catches per trip (in g)
+PredictAsp_s <- as.data.frame(Effect(c('season'),Asp_mod_s))
+Asp_s_coef <- coef(summary(Asp_mod_s))  
+
+
+#modify so that you can add to the main table with all species and parameters
+
+asp<-cbind(PredictAsp_s[,2], PredictAsp_s[,3], Asp_s_coef[,3], Asp_s_coef[,4], PredictAsp_s[,4], PredictAsp_s[,5], "Asp", PredictAsp_s[,1])
+
+asp[,8]<-c("autumn", "spring", "summer", "winter")
+
+rownames(asp)<-NULL
+
+colnames(asp)<-c("Estimate, g", "Std.Error", "t.value", "p value", "lowCI_2.5%", "upCI_97.5%", "Species", "Parameter")
+
+temp5<-rbind(t, asp)
+
+t<-temp5
+#save
+#save(file="PredictAsp_s_glm.Rdata", PredictAsp_s)
+
+
+#########---COMPARE----#####################
+#compare the best model and the one to be used for prediction
+
+#estimate explained deviance and pseudoR2 for model comparison (how much the best model is better)
+DescTools::PseudoR2(Asp_mod_best, which="Efron")   #0.01911343        
+
+DescTools::PseudoR2(Asp_mod_s, which="Efron")   #0.008800727       
+
+modEvA::Dsquared(Asp_mod_best)*100   #30
+modEvA::Dsquared(Asp_mod_s)*100   #23
+
+
+```
+
+
+#Pike cpue 
+```{r}
+##########---MODEL----#####################
+
+Pike_mod_full <- glm(Lydeka~ year + season + method + duration + gear_no + gear_type, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(Pike_mod_full)  # only duration marginally signif
+AICtweedie(Pike_mod_full)  #996
+modEvA::Dsquared(Pike_mod_full)*100   #52%
+
+
+#model with signif factors only
+Pike_mod_2 <- glm(Lydeka ~ duration, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(Pike_mod_2)
+AICtweedie(Pike_mod_2)   #978
+modEvA::Dsquared(Pike_mod_2)*100 #9.5%  #here AIC is much lower, but expl dev is much lower, consider Pike_mod_full as best model 
+
+Pike_mod_best<-Pike_mod_full
+
+#extract coef of the best model
+Pike_best_coef <- data.frame(coef(summary(Pike_mod_best)))
+Pike_best_coef$Parameter<-c("Intercept", "2017", "2020", "2021", "spring", "summer", "winter", "methodBoat", "duration", "gear no", "Gear.type_Pludine", "Gear.type_Spiningas")
+Pike_best_coef$Species<-"Pike"
+Pike_best_coef$lowCI_2.5<-""
+Pike_best_coef$upCI_97.5<-""
+
+colnames(Pike_best_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+#however, we only have seasons for anglers, so make model with seasons only 
+Pike_mod_s <-  glm(Lydeka ~ 1 + season, data= catch_id, family = tweedie(var.power = 1.1, link.power = 0))
+summary(Pike_mod_s)
+AICtweedie(Pike_mod_s)  #982
+
+#extract coef of the seaosn only model
+Pike_s_coef <- data.frame(coef(summary(Pike_mod_s)))
+Pike_s_coef$Parameter<-c("Intercept", "spring", "summer", "winter")
+Pike_s_coef$Species<-"Pike"
+Pike_s_coef$lowCI_2.5<-""
+Pike_s_coef$upCI_97.5<-""
+
+colnames(Pike_s_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+##########---PREDICT----#####################
+#predict catches per trip (in g)
+PredictPike_s <- as.data.frame(Effect(c('season'),Pike_mod_s))
+Pike_s_coef <- coef(summary(Pike_mod_s))  
+
+
+#modify so that you can add to the main table with all species and parameters
+
+pike<-cbind(PredictPike_s[,2], PredictPike_s[,3], Pike_s_coef[,3], Pike_s_coef[,4], PredictPike_s[,4], PredictPike_s[,5], "Pike", PredictPike_s[,1])
+
+pike[,8]<-c("autumn", "spring", "summer", "winter")
+
+rownames(pike)<-NULL
+
+colnames(pike)<-c("Estimate, g", "Std.Error", "t.value", "p value", "lowCI_2.5%", "upCI_97.5%", "Species", "Parameter")
+
+temp5<-rbind(t, pike)
+
+t<-temp5
+#save
+#save(file="PredictPike_s_glm.Rdata", PredictPike_s)
+
+#########---COMPARE----#####################
+#compare the best model and the one to be used for prediction
+
+#estimate explained deviance and pseudoR2 for model comparison (how much the best model is better)
+DescTools::PseudoR2(Pike_mod_best, which="Efron")   #0.04637011         
+
+DescTools::PseudoR2(Pike_mod_s, which="Efron")   #0.005244076        
+
+modEvA::Dsquared(Pike_mod_best)*100   #52
+modEvA::Dsquared(Pike_mod_s)*100   #22
+
+```
+
+#Carp 
+
+```{r}
+
+##########---MODEL----#####################
+
+Carp_mod_full <- glm(Karpis~ year + season + method + duration + gear_no + gear_type, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(Carp_mod_full)  # season and gear no signif
+AICtweedie(Carp_mod_full)  #1165
+modEvA::Dsquared(Carp_mod_full)*100   #44.4%
+
+
+#model with signif factors only
+Carp_mod_2 <- glm(Karpis ~ season+gear_no, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(Carp_mod_2)
+AICtweedie(Carp_mod_2)   #1154
+modEvA::Dsquared(Carp_mod_2)*100 #31 %  #here AIC is much lower, expl dev is lower (but not >=20% lower), consider Carp_mod_2 as best model 
+
+Carp_mod_best<-Carp_mod_2
+
+#extract coef of the best model
+Carp_best_coef <- data.frame(coef(summary(Carp_mod_best)))
+Carp_best_coef$Parameter<-c("Intercept", "spring", "summer", "winter", "gear no")
+Carp_best_coef$Species<-"Carp"
+Carp_best_coef$lowCI_2.5<-""
+Carp_best_coef$upCI_97.5<-""
+
+colnames(Carp_best_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+#extract coef of the full model 
+
+Carp_full_coef<-data.frame(coef(summary(Carp_mod_full)))
+Carp_full_coef$Parameter<-c("Intercept", "2017", "2020", "2021", "spring", "summer","winter" , "methodBoat", "duration", "gear_no",  "Gear.type_Pludine", "Gear.type_Spiningas")
+Carp_full_coef$Species<-"Carp"
+Carp_full_coef$lowCI_2.5<-""
+Carp_full_coef$upCI_97.5<-""
+colnames(Carp_full_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+
+#however, we only have seasons for anglers, so make model with seasons only 
+Carp_mod_s <-  glm(Karpis ~ 1 + season, data= catch_id, family = tweedie(var.power = 1.1, link.power = 0))
+summary(Carp_mod_s)
+AICtweedie(Carp_mod_s)  #1153
+
+#extract coef of the seaosn only model
+Carp_s_coef <- data.frame(coef(summary(Carp_mod_s)))
+Carp_s_coef$Parameter<-c("Intercept", "spring", "summer", "winter")
+Carp_s_coef$Species<-"Carp"
+Carp_s_coef$lowCI_2.5<-""
+Carp_s_coef$upCI_97.5<-""
+
+colnames(Carp_s_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+##########---PREDICT----#####################
+#predict catches per trip (in g)
+PredictCarp_s <- as.data.frame(Effect(c('season'),Carp_mod_s))
+Carp_s_coef <- coef(summary(Carp_mod_s))  
+
+#modify so that you can add to the main table with all species and parameters
+
+carp<-cbind(PredictCarp_s[,2], PredictCarp_s[,3], Carp_s_coef[,3], Carp_s_coef[,4], PredictCarp_s[,4], PredictCarp_s[,5], "Carp", PredictCarp_s[,1])
+carp[,8]<-c("autumn", "spring", "summer", "winter")
+rownames(carp)<-NULL
+colnames(carp)<-c("Estimate, g", "Std.Error", "t.value", "p value", "lowCI_2.5%", "upCI_97.5%", "Species", "Parameter")
+temp5<-rbind(t, carp)
+t<-temp5
+#save
+#save(file="PredictCarp_s_glm.Rdata", PredictCarp_s)
+
+#########---COMPARE----#####################
+#compare the best model and the one to be used for prediction
+
+#estimate explained deviance and pseudoR2 for model comparison (how much the best model is better)
+DescTools::PseudoR2(Carp_mod_best, which="Efron")   #0.01058755          
+DescTools::PseudoR2(Carp_mod_s, which="Efron")   #0.01142212        
+
+modEvA::Dsquared(Carp_mod_best)*100   #31
+modEvA::Dsquared(Carp_mod_s)*100   #21
+
+
+```
+
+#Catfish 
+
+```{r}
+
+##########---MODEL----#####################
+
+Catf_mod_full <- glm(Šamas~ year + season + method + duration + gear_no + gear_type, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(Catf_mod_full)  # method and gear no signif
+AICtweedie(Catf_mod_full)  #996
+modEvA::Dsquared(Catf_mod_full)*100   #50 %
+
+
+#model with signif factors only
+Catf_mod_2 <- glm(Šamas ~ method + gear_no, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )    #did not converge 
+
+#consider Catf_mod_full as best model 
+
+Catf_mod_best<-Catf_mod_full
+
+#extract coef of the best model
+Catf_best_coef <- data.frame(coef(summary(Catf_mod_best)))
+Catf_best_coef$Parameter<-c("Intercept", "2017", "2020", "2021", "spring", "summer", "winter", "methodBoat", "duration", "gear no", "Gear.type_Pludine", "Gear.type_Spiningas")
+Catf_best_coef$Species<-"Catfish"
+Catf_best_coef$lowCI_2.5<-""
+Catf_best_coef$upCI_97.5<-""
+
+colnames(Catf_best_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+#however, we only have seasons for anglers, so make model with seasons only 
+Catf_mod_s <-  glm(Šamas ~ 1 + season, data= catch_id, family = tweedie(var.power = 1.1, link.power = 0))
+summary(Catf_mod_s)
+AICtweedie(Catf_mod_s)  #977
+
+#extract coef of the seaosn only model
+Catf_s_coef <- data.frame(coef(summary(Catf_mod_s)))
+Catf_s_coef$Parameter<-c("Intercept", "spring", "summer", "winter")
+Catf_s_coef$Species<-"Catfish"
+Catf_s_coef$lowCI_2.5<-""
+Catf_s_coef$upCI_97.5<-""
+
+colnames(Catf_s_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+
+##########---PREDICT----#####################
+#predict catches per trip (in g)
+PredictCatf_s <- as.data.frame(Effect(c('season'),Catf_mod_s))
+Catf_s_coef <- coef(summary(Catf_mod_s))  
+
+
+#modify so that you can add to the main table with all species and parameters
+
+catf<-cbind(PredictCatf_s[,2], PredictCatf_s[,3], Catf_s_coef[,3], Catf_s_coef[,4], PredictCatf_s[,4], PredictCatf_s[,5], "Catfish", PredictCatf_s[,1])
+catf[,8]<-c("autumn", "spring", "summer", "winter")
+rownames(catf)<-NULL
+colnames(catf)<-c("Estimate, g", "Std.Error", "t.value", "p value", "lowCI_2.5%", "upCI_97.5%", "Species", "Parameter")
+temp5<-rbind(t, catf)
+t<-temp5
+#save
+#save(file="PredictCatf_s_glm.Rdata", PredictCatf_s)
+
+
+#########---COMPARE----#####################
+#compare the best model and the one to be used for prediction
+
+#estimate explained deviance and pseudoR2 for model comparison (how much the best model is better)
+DescTools::PseudoR2(Catf_mod_best, which="Efron")   #0.01332844          
+
+DescTools::PseudoR2(Catf_mod_s, which="Efron")   #0.009191353         
+
+modEvA::Dsquared(Catf_mod_best)*100   #50
+modEvA::Dsquared(Catf_mod_s)*100   #35
+
+
+```
+
+
+#Total catch cpue (all species)
+
+```{r}
+
+#total catch (of all species) per fishing ID
+
+catch_id$all<-rowSums(catch_id[8:22])
+
+#catch_id$year<-factor(catch_id$year, ordered=FALSE) #ordered or not, year as factor produces the same results
+
+##########---MODEL----#####################
+
+all_mod_full <- glm(all ~ year + season + method + duration + gear_no + gear_type, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(all_mod_full)   #everything is signif, gear type is marginally signif
+AICtweedie(all_mod_full)  #18 862
+expdev<-(1280555-947219)/1280555*100   #26 %  explained deviance
+
+
+#check alternative models
+#without gear type
+all_mod2 <- glm(all ~ year + season + method + duration + gear_no, data=catch_id, family = tweedie(var.power = 1.1, link.power = 0) )
+summary(all_mod2)
+AICtweedie(all_mod2) #18 947
+modEvA::Dsquared(all_mod2)*100   #25.0852 %  explained deviance
+
+#consider all_mod_full as the best model - AIC is lower, includes signif factors
+
+all_mod_best<-all_mod_full
+
+
+#extract coef of the best model
+all_mod_best_coef <- data.frame(coef(summary(all_mod_best)))
+all_mod_best_coef$Parameter<-c("Intercept", "2017", "2020", "2021", "spring", "summer", "winter", "methodBoat", "duration", "gear no", "Gear.type_Pludine", "Gear.type_Spiningas")
+all_mod_best_coef$Species<-"Total catch"
+all_mod_best_CI <- confint(all_mod_best)
+all_mod_best_coef<-cbind(all_mod_best_coef, all_mod_best_CI[c(-8, -14),])
+colnames(all_mod_best_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+
+## for prediction we only have season (ice ==winter, noIce==other seasons), so we need to build a model based on that
+#model with season only
+all_mod_s <-  glm(all ~ 1 + season, data= catch_id, family = tweedie(var.power = 1.1, link.power = 0))
+
+summary(all_mod_s)
+
+#extract coef of the seaosn only model
+all_s_coef <- data.frame(coef(summary(all_mod_s)))
+all_s_coef$Parameter<-c("Intercept", "spring", "summer", "winter")
+all_s_coef$Species<-"Total catch"
+all_s_CI <- confint(all_mod_s)
+
+all_s_coef<-cbind(all_s_coef, all_s_CI)
+
+colnames(all_s_coef)<-c("Estimate", "Std.Error", "t.value", "p value", "Parameter", "Species", "lowCI_2.5%", "upCI_97.5%")
+
+
+##########---PREDICT----#####################
+## predict catches (in g) per trip
+
+Predictall_s <- as.data.frame(Effect(c('season'),all_mod_s))
+all_s_coef <- coef(summary(all_mod_s))
+
+#modify so that you can add to the main table with all species and parameters
+all<-cbind(Predictall_s[,2], Predictall_s[,3], all_s_coef[,3], all_s_coef[,4], Predictall_s[,4], Predictall_s[,5], "all", Predictall_s[,1])
+all[,8]<-c("autumn", "spring", "summer", "winter")
+rownames(all)<-NULL
+colnames(all)<-colnames(t)<-c("Estimate, g", "Std.Error", "t.value", "p value", "lowCI_2.5%", "upCI_97.5%", "Species", "Parameter")
+temp5<-rbind(t, all)
+t<-temp5
+
+#save(t, file = "coefficients.RData")
+#save
+#save(file="PredictAll_s_glm.Rdata", Predictall_s)
+
+
+
+##########---COMPARE----#####################
+#compare the best model and the one to be used for prediction
+
+#estimate explained deviance and pseudoR2 for model comparison (how much the best model is better)
+DescTools::PseudoR2(all_mod_best, which="Efron")   #0.1103596    
+DescTools::PseudoR2(all_mod_s, which="Efron")   #0.05505048     
+
+modEvA::Dsquared(all_mod_best)*100   #26.0306
+modEvA::Dsquared(all_mod_s)*100   #16.51883
+
+plot_coefs(all_mod_s, all_mod_best, model.names = c("Season only", "Best"), legend.title = "Total catch model")
+
+```
+
+### ### Supplementary tables: models coefficients 
+
+#combine coeff of recreational cpue models
+
+```{r}
+#################----best model coefficients
+
+best_models_coef<-rbind(all_mod_best_coef, Roach_best_coef, Pikeperch_best_coef, Perch_best_coef, Bream_best_coef, S_Bream_best_coef, Karosas_best_coef, Vimba_best_coef, Asp_best_coef, Pike_best_coef, Carp_best_coef, Catf_best_coef)
+
+rownames(best_models_coef)<-NULL
+best_models_coef<-best_models_coef[, c(6, 5,1:4, 7:8) ]
+
+#save
+#write.csv(best_models_coef, "best_models_coefUpd.csv")
+
+###############----full models coefficients
+
+all_mod_full_coef<-all_mod_best_coef  #for total catch full model is also the best model
+S_Bream_full_coef<-S_Bream_best_coef #for silver bream full model is also the best model
+Perch_full_coef<-Perch_best_coef #for perch full model is also the best model
+
+#for crussian carp, vimba bream, pike and catfish full model is also the best model
+Karosas_full_coef<-Karosas_best_coef  
+Vimba_full_coef<-Vimba_best_coef
+Pike_full_coef<-Pike_best_coef
+Catf_full_coef<-Catf_best_coef
+
+
+full_models_coef<-rbind(all_mod_full_coef, S_Bream_full_coef, Perch_full_coef, Roach_full_coef, Pikeperch_full_coef, Bream_full_coef,Vimba_full_coef, Pike_full_coef,  Catf_full_coef, Carp_full_coef, Asp_full_coef, Karosas_full_coef)
+
+rownames(full_models_coef)<-NULL
+full_models_coef<-full_models_coef[, c(6, 5,1:4, 7:8) ]
+
+
+#save
+#write.csv(full_models_coef, "full_models_coefUpd.csv")
+
+```
+
+### ### Predicting annual catches
+
+#Estimate anglers numbers per season
+
+```{r include=T, eval = T, echo = T, message = F, warning = F}
+# now we add the total number of fishing events per season - need to get it from the other dataframe, grouping them by season
+
+load(file = "dailyAnglerNumber2.RData")  #with 80% CI
+
+#add season
+NumberOfAnglers$season<-NA
+seas<-time2season(NumberOfAnglers$date_name, out.fmt = c('seasons', 'months'), type="default")
+NumberOfAnglers$season<-seas
+
+#group by season - how many fishing trips per season 
+
+#80% CI of anglers estimation
+
+NumberOfAnglers_s80 <- NumberOfAnglers %>% 
+   group_by(season) %>% 
+  summarise(values = sum(totalAnglers50, na.rm = T),sum(totalAnglers10, na.rm = T), sum(totalAnglers90, na.rm = T),  .groups = 'drop')
+
+colnames(NumberOfAnglers_s80) <- c("season", "Anglers50", "Anglers10", "Anglers90") 
+
+
+sum(NumberOfAnglers_s80$Anglers50)   #108 434 
+sum(NumberOfAnglers_s80$Anglers10)  #72 327
+sum(NumberOfAnglers_s80$Anglers90)   #169 873
+
+#save estimation- number of anglers (fishing trips) per season (based on 2020-2021 data)
+#save(file="TripsPerSeason80.Rdata", NumberOfAnglers_s80)
+
+
+```
+
+#Pikeperch prediction - catches per year
+
+```{r include=T, eval = T, echo = T, message = F, warning = F}
+
+load(file = "TripsPerSeason80.Rdata")  #with 80% CI of anglers estimation
+load(file="predictions/PredictPikeperch_s_glmUpd.Rdata")
+
+###Including uncertainty of the pikeperch cpue estimation###
+
+# extrapolate the total catch per year (number of anglers is fixed - Anglers50)
+#pikeperch model with season only
+
+#make separate dataframe for pikeperch catches per year
+season<-c("autumn", "spring", "summer", "winter")
+Anglers50<-c(NA, NA, NA, NA)
+Anglers50low<-c(NA, NA, NA, NA)
+Anglers50up<-c(NA, NA, NA, NA)
+
+PredictPikeperch_perYear<-data.frame(season, Anglers50,Anglers50low,Anglers50up)
+
+PredictPikeperch_perYear$Anglers50<-(NumberOfAnglers_s80$Anglers50 * PredictPikeperch_s$fit)/1000000   #in tonnes 
+PredictPikeperch_perYear$Anglers50low<-(NumberOfAnglers_s80$Anglers50 * PredictPikeperch_s$lower)/1000000   
+PredictPikeperch_perYear$Anglers50up<-(NumberOfAnglers_s80$Anglers50 * PredictPikeperch_s$upper)/1000000   
+
+
+###Including uncertainty of the number of anglers
+# extrapolate the catch - with number of anglers uncertainty (Pikeperch cpue is fixed)
+#pikeperch model with season only
+
+PredictPikeperch_perYear$Anglers10 <- (NumberOfAnglers_s80$Anglers10 * PredictPikeperch_s$fit)/1000000 #in tonnes
+PredictPikeperch_perYear$Anglers90 <- (NumberOfAnglers_s80$Anglers90 * PredictPikeperch_s$fit)/1000000
+
+sum(PredictPikeperch_perYear$Anglers10)   # 12.6 tonnes
+sum(PredictPikeperch_perYear$Anglers90)  # 30.7 tonnes
+
+
+###Including uncertainty both from cpue and number of anglers estimation
+PredictPikeperch_perYear$Anglers10low <- (NumberOfAnglers_s80$Anglers10 * PredictPikeperch_s$lower)/1000000 #in tonnes
+PredictPikeperch_perYear$Anglers10up <- (NumberOfAnglers_s80$Anglers10 * PredictPikeperch_s$upper)/1000000 #in tonnes
+
+PredictPikeperch_perYear$Anglers90low <- (NumberOfAnglers_s80$Anglers90 * PredictPikeperch_s$lower)/1000000 #in tonnes
+PredictPikeperch_perYear$Anglers90up <- (NumberOfAnglers_s80$Anglers90 * PredictPikeperch_s$upper)/1000000 #in tonnes
+
+
+#save
+#save(file="PredictPikeperch_perYear80.Rdata", PredictPikeperch_perYear)
+
+
+```
+
+#Pikeperch graphs - predicted catches per year
+
+```{r}
+
+load(file="predictions/PredictPikeperch_perYear80.Rdata")  #with 80% CI of anglers estimation
+
+
+df.long <- pivot_longer(PredictPikeperch_perYear, cols=2:10, names_to = "Catches", values_to = "value_t")
+
+#with all uncertainty
+
+#note, Inf values are not drawn
+
+ggplot(df.long, aes(x=season, y=value_t)) + 
+    geom_boxplot() + ylab("catches, t") +xlab("") +ggtitle("Pikeperch recreational catches per season") +
+    theme_bw()
+
+
+
+```
+
+
+#Perch prediction - catches per year
+
+```{r}
+#load(file = "TripsPerSeason80.Rdata")  #with 80% CI of anglers estimation
+load(file="predictions/PredictPerch_s_glm.Rdata")
+
+
+###Including uncertainty of the cpue estimation
+
+# extrapolate the total catch per year (number of anglers is fixed - Anglers50)
+#perch model with season only, all data 
+
+#make separate dataframe for perch catches per year
+season<-c("autumn", "spring", "summer", "winter")
+Anglers50<-c(NA, NA, NA, NA)
+Anglers50low<-c(NA, NA, NA, NA)
+Anglers50up<-c(NA, NA, NA, NA)
+
+PredictPerch_perYear<-data.frame(season, Anglers50,Anglers50low,Anglers50up)
+
+PredictPerch_perYear$Anglers50<-(NumberOfAnglers_s80$Anglers50 * PredictPerch_s$fit)/1000000   #in tonnes 
+PredictPerch_perYear$Anglers50low<-(NumberOfAnglers_s80$Anglers50 * PredictPerch_s$lower)/1000000   
+PredictPerch_perYear$Anglers50up<-(NumberOfAnglers_s80$Anglers50 * PredictPerch_s$upper)/1000000   
+
+
+###Including uncertainty of the number of anglers
+
+# extrapolate the catch - with number of anglers uncertainty (Perch cpue is fixed)
+
+#perch model with season only
+
+PredictPerch_perYear$Anglers10 <- (NumberOfAnglers_s80$Anglers10 * PredictPerch_s$fit)/1000000 #in tonnes
+PredictPerch_perYear$Anglers90 <- (NumberOfAnglers_s80$Anglers90 * PredictPerch_s$fit)/1000000
+
+sum(PredictPerch_perYear$Anglers10)   # 5.1 tonnes   # 6.1 tonnes 80% CI
+sum(PredictPerch_perYear$Anglers90)  # 18.5 tonnes   #13.9 tones 80% CI
+
+
+###Including uncertainty both from cpue and number of anglers estimation
+PredictPerch_perYear$Anglers10low <- (NumberOfAnglers_s80$Anglers10 * PredictPerch_s$lower)/1000000 #in tonnes
+PredictPerch_perYear$Anglers10up <- (NumberOfAnglers_s80$Anglers10 * PredictPerch_s$upper)/1000000 #in tonnes
+
+PredictPerch_perYear$Anglers90low <- (NumberOfAnglers_s80$Anglers90 * PredictPerch_s$lower)/1000000 #in tonnes
+PredictPerch_perYear$Anglers90up <- (NumberOfAnglers_s80$Anglers90 * PredictPerch_s$upper)/1000000 #in tonnes
+
+
+#save
+#save(file="PredictPerch_perYear80.Rdata", PredictPerch_perYear)
+```
+
+#Perch graphs - predicted catches per year
+
+```{r}
+
+load(file="predictions/PredictPerch_perYear80.Rdata")  #with 80% CI of anglers estimation
+
+df.long_perch <- pivot_longer(PredictPerch_perYear, cols=2:10, names_to = "Catches", values_to = "value_t")
+
+#with all uncertainty
+
+
+ggplot(df.long_perch, aes(x=season, y=value_t)) + 
+    geom_boxplot() + ylab("catches, t") +xlab("") +ggtitle("Perch recreational catches per season") +
+    theme_bw()
+
+
+```
+
+
+#Bream prediction - catches per year
+
+```{r}
+#load(file = "TripsPerSeason80.Rdata")  #with 80% CI of anglers estimation
+load(file="predictions/PredictBream_s_glm.Rdata")
+
+###Including uncertainty of the cpue estimation
+
+# extrapolate the total catch per year (number of anglers is fixed - Anglers50)
+
+#bream model with season only, all data 
+
+#make separate dataframe for bream catches per year
+season<-c("autumn", "spring", "summer", "winter")
+Anglers50<-c(NA, NA, NA, NA)
+Anglers50low<-c(NA, NA, NA, NA)
+Anglers50up<-c(NA, NA, NA, NA)
+
+PredictBream_perYear<-data.frame(season, Anglers50,Anglers50low,Anglers50up)
+
+PredictBream_perYear$Anglers50<-(NumberOfAnglers_s80$Anglers50 * PredictBream_s$fit)/1000000   #in tonnes 
+PredictBream_perYear$Anglers50low<-(NumberOfAnglers_s80$Anglers50 * PredictBream_s$lower)/1000000   
+PredictBream_perYear$Anglers50up<-(NumberOfAnglers_s80$Anglers50 * PredictBream_s$upper)/1000000   
+
+
+###Including uncertainty of the number of anglers
+
+# extrapolate the catch - with number of anglers uncertainty (bream cpue is fixed)
+
+#bream model with season only
+
+PredictBream_perYear$Anglers10 <- (NumberOfAnglers_s80$Anglers10 * PredictBream_s$fit)/1000000 #in tonnes
+PredictBream_perYear$Anglers90 <- (NumberOfAnglers_s80$Anglers90 * PredictBream_s$fit)/1000000
+
+sum(PredictBream_perYear$Anglers10)   # 16.9 tonnes   #20.8 tones with 80% CI of anglers estimation
+sum(PredictBream_perYear$Anglers90)  # 69.7 tonnes    #51.1 tones with 80% CI of anglers estimation
+
+
+###Including uncertainty both from cpue and number of anglers estimation
+PredictBream_perYear$Anglers10low <- (NumberOfAnglers_s80$Anglers10 * PredictBream_s$lower)/1000000 #in tonnes
+PredictBream_perYear$Anglers10up <- (NumberOfAnglers_s80$Anglers10 * PredictBream_s$upper)/1000000 #in tonnes
+
+PredictBream_perYear$Anglers90low <- (NumberOfAnglers_s80$Anglers90 * PredictBream_s$lower)/1000000 #in tonnes
+PredictBream_perYear$Anglers90up <- (NumberOfAnglers_s80$Anglers90 * PredictBream_s$upper)/1000000 #in tonnes
+
+
+#save
+#save(file="PredictBream_perYear80.Rdata", PredictBream_perYear)
+
+```
+
+#Bream graphs - predicted catches per year
+```{r}
+load(file="predictions/PredictBream_perYear80.Rdata")  #with 80% CI of anglers estimation
+
+df.long_bream <- pivot_longer(PredictBream_perYear, cols=2:10, names_to = "Catches", values_to = "value_t")
+
+#with all uncertainty
+
+
+ggplot(df.long_bream, aes(x=season, y=value_t)) + 
+    geom_boxplot() + ylab("catches, t") +xlab("") +ggtitle("Bream recreational catches per season") +
+    theme_bw()
+
+
+
+```
+
+
+
+#Silver Bream prediction - catches per year
+
+```{r}
+
+#load(file = "TripsPerSeason80.Rdata") #with 80 % CI of anglers estimation
+load(file="predictions/PredictSBream_s_glm.Rdata")
+
+
+###Including uncertainty of the cpue estimation
+
+# extrapolate the total catch per year (number of anglers is fixed - Anglers50)
+
+#silver bream model with season only, all data 
+
+#make separate dataframe for catches per year
+season<-c("autumn", "spring", "summer", "winter")
+Anglers50<-c(NA, NA, NA, NA)
+Anglers50low<-c(NA, NA, NA, NA)
+Anglers50up<-c(NA, NA, NA, NA)
+
+PredictSBream_perYear<-data.frame(season, Anglers50,Anglers50low,Anglers50up)
+
+PredictSBream_perYear$Anglers50<-(NumberOfAnglers_s80$Anglers50 * PredictSBream_s$fit)/1000000   #in tonnes 
+PredictSBream_perYear$Anglers50low<-(NumberOfAnglers_s80$Anglers50 * PredictSBream_s$lower)/1000000   
+PredictSBream_perYear$Anglers50up<-(NumberOfAnglers_s80$Anglers50 * PredictSBream_s$upper)/1000000   
+
+
+###Including uncertainty of the number of anglers
+
+# extrapolate the catch - with number of anglers uncertainty (silver bream cpue is fixed)
+
+#silver bream model with season only
+
+PredictSBream_perYear$Anglers10 <- (NumberOfAnglers_s80$Anglers10 * PredictSBream_s$fit)/1000000 #in tonnes
+PredictSBream_perYear$Anglers90 <- (NumberOfAnglers_s80$Anglers90 * PredictSBream_s$fit)/1000000
+
+sum(PredictSBream_perYear$Anglers10)   # 2.19 tonnes   #2.7 tones with 80 % CI of anglers estimation
+sum(PredictSBream_perYear$Anglers90)  # 8.9 tonnes    #6.5 tones with 80% CI of anglers estimation
+
+
+###Including uncertainty both from cpue and number of anglers estimation
+PredictSBream_perYear$Anglers10low <- (NumberOfAnglers_s80$Anglers10 * PredictSBream_s$lower)/1000000 #in tonnes
+PredictSBream_perYear$Anglers10up <- (NumberOfAnglers_s80$Anglers10 * PredictSBream_s$upper)/1000000 #in tonnes
+
+PredictSBream_perYear$Anglers90low <- (NumberOfAnglers_s80$Anglers90 * PredictSBream_s$lower)/1000000 #in tonnes
+PredictSBream_perYear$Anglers90up <- (NumberOfAnglers_s80$Anglers90 * PredictSBream_s$upper)/1000000 #in tonnes
+
+
+#save
+#save(file="PredictSBream_perYear80.Rdata", PredictSBream_perYear)
+
+```
+
+#Silver bream graphs - predicted catches per year
+
+```{r}
+#load(file="PredictSBream_perYear.Rdata")  #with 95% CI of anglers estimation
+load(file="predictions/PredictSBream_perYear80.Rdata")  #with 80% CI of anglers estimation
+
+df.long_sbream <- pivot_longer(PredictSBream_perYear, cols=2:10, names_to = "Catches", values_to = "value_t")
+
+#with all uncertainty
+
+
+ggplot(df.long_sbream, aes(x=season, y=value_t)) + 
+    geom_boxplot() + ylab("catches, t") +xlab("") +ggtitle("Silver bream recreational catches per season") +
+    theme_bw()
+
+
+```
+
+#Karosas prediction - catches per year
+
+```{r}
+#load(file = "TripsPerSeason80.Rdata") #with 80 % CI of anglers estimation
+
+load(file="predictions/PredictKarosas_s_glm.Rdata")
+
+###Including uncertainty of the cpue estimation
+
+# extrapolate the total catch per year (number of anglers is fixed - Anglers50)
+
+#model with season only, all data 
+
+#make separate dataframe for catches per year
+season<-c("autumn", "spring", "summer", "winter")
+Anglers50<-c(NA, NA, NA, NA)
+Anglers50low<-c(NA, NA, NA, NA)
+Anglers50up<-c(NA, NA, NA, NA)
+
+PredictKarosas_perYear<-data.frame(season, Anglers50,Anglers50low,Anglers50up)
+
+PredictKarosas_perYear$Anglers50<-(NumberOfAnglers_s80$Anglers50 * PredictKarosas_s$fit)/1000000   #in tonnes 
+PredictKarosas_perYear$Anglers50low<-(NumberOfAnglers_s80$Anglers50 * PredictKarosas_s$lower)/1000000   
+PredictKarosas_perYear$Anglers50up<-(NumberOfAnglers_s80$Anglers50 * PredictKarosas_s$upper)/1000000   
+
+###Including uncertainty of the number of anglers
+
+# extrapolate the catch - with number of anglers uncertainty (silver bream cpue is fixed)
+
+#silver bream model with season only
+
+PredictKarosas_perYear$Anglers10 <- (NumberOfAnglers_s80$Anglers10 * PredictKarosas_s$fit)/1000000 #in tons
+PredictKarosas_perYear$Anglers90 <- (NumberOfAnglers_s80$Anglers90 * PredictKarosas_s$fit)/1000000
+
+sum(PredictKarosas_perYear$Anglers10)   # 28.5 t   
+sum(PredictKarosas_perYear$Anglers90)  # 69.5 t    
+
+###Including uncertainty both from cpue and number of anglers estimation
+PredictKarosas_perYear$Anglers10low <- (NumberOfAnglers_s80$Anglers10 * PredictKarosas_s$lower)/1000000 #in tons
+PredictKarosas_perYear$Anglers10up <- (NumberOfAnglers_s80$Anglers10 * PredictKarosas_s$upper)/1000000
+PredictKarosas_perYear$Anglers90low <- (NumberOfAnglers_s80$Anglers90 * PredictKarosas_s$lower)/1000000 
+PredictKarosas_perYear$Anglers90up <- (NumberOfAnglers_s80$Anglers90 * PredictKarosas_s$upper)/1000000 
+
+
+#save
+#save(file="PredictKarosas_perYear80.Rdata", PredictKarosas_perYear)
+
+```
+
+
+#Karosas graphs - predicted catches per year
+
+```{r}
+load(file="predictions/PredictKarosas_perYear80.Rdata")  #with 80% CI of anglers estimation
+
+df.long_karosas <- pivot_longer(PredictKarosas_perYear, cols=2:10, names_to = "Catches", values_to = "value_t")
+
+#with all uncertainty
+
+
+ggplot(df.long_karosas, aes(x=season, y=value_t)) + 
+    geom_boxplot() + ylab("catches, t") +xlab("") +ggtitle("Crussian carp recreational catches per season") +
+    theme_bw()
+
+
+```
+
+#Vimba bream prediction - catches per year
+
+```{r}
+#load(file = "TripsPerSeason80.Rdata") #with 80 % CI of anglers estimation
+load(file="predictions/PredictVimba_s_glm.Rdata")
+
+###Including uncertainty of the cpue estimation
+
+# extrapolate the total catch per year (number of anglers is fixed - Anglers50)
+
+#model with season only, all data 
+
+#make separate dataframe for catches per year
+season<-c("autumn", "spring", "summer", "winter")
+Anglers50<-c(NA, NA, NA, NA)
+Anglers50low<-c(NA, NA, NA, NA)
+Anglers50up<-c(NA, NA, NA, NA)
+
+PredictVimba_perYear<-data.frame(season, Anglers50,Anglers50low,Anglers50up)
+
+PredictVimba_perYear$Anglers50<-(NumberOfAnglers_s80$Anglers50 * PredictVimba_s$fit)/1000000   #in tonnes 
+PredictVimba_perYear$Anglers50low<-(NumberOfAnglers_s80$Anglers50 * PredictVimba_s$lower)/1000000   
+PredictVimba_perYear$Anglers50up<-(NumberOfAnglers_s80$Anglers50 * PredictVimba_s$upper)/1000000   
+
+###Including uncertainty of the number of anglers
+
+# extrapolate the catch - with number of anglers uncertainty (silver bream cpue is fixed)
+
+#silver bream model with season only
+
+PredictVimba_perYear$Anglers10 <- (NumberOfAnglers_s80$Anglers10 * PredictVimba_s$fit)/1000000 #in tons
+PredictVimba_perYear$Anglers90 <- (NumberOfAnglers_s80$Anglers90 * PredictVimba_s$fit)/1000000
+
+sum(PredictVimba_perYear$Anglers10)   # 0.8 t   
+sum(PredictVimba_perYear$Anglers90)  # 2 t    
+
+###Including uncertainty both from cpue and number of anglers estimation
+PredictVimba_perYear$Anglers10low <- (NumberOfAnglers_s80$Anglers10 * PredictVimba_s$lower)/1000000 #in tons
+PredictVimba_perYear$Anglers10up <- (NumberOfAnglers_s80$Anglers10 * PredictVimba_s$upper)/1000000
+PredictVimba_perYear$Anglers90low <- (NumberOfAnglers_s80$Anglers90 * PredictVimba_s$lower)/1000000 
+PredictVimba_perYear$Anglers90up <- (NumberOfAnglers_s80$Anglers90 * PredictVimba_s$upper)/1000000 
+
+
+#save
+#save(file="PredictVimba_perYear80.Rdata", PredictVimba_perYear)
+```
+
+#Vimba bream graphs - predicted catches per year
+
+```{r}
+load(file="predictions/PredictVimba_perYear80.Rdata")  #with 80% CI of anglers estimation
+
+df.long_vimba <- pivot_longer(PredictVimba_perYear, cols=2:10, names_to = "Catches", values_to = "value_t")
+
+#with all uncertainty
+
+
+ggplot(df.long_vimba, aes(x=season, y=value_t)) + 
+    geom_boxplot() + ylab("catches, t") +xlab("") +ggtitle("Vimba bream recreational catches per season") +
+    theme_bw()
+```
+
+#Asp prediction - catches per year
+
+```{r}
+#load(file = "TripsPerSeason80.Rdata") #with 80 % CI of anglers estimation
+
+load(file="predictions/PredictAsp_s_glm.Rdata")
+
+###Including uncertainty of the cpue estimation
+
+# extrapolate the total catch per year (number of anglers is fixed - Anglers50)
+
+#model with season only, all data 
+
+#make separate dataframe for catches per year
+season<-c("autumn", "spring", "summer", "winter")
+Anglers50<-c(NA, NA, NA, NA)
+Anglers50low<-c(NA, NA, NA, NA)
+Anglers50up<-c(NA, NA, NA, NA)
+
+PredictAsp_perYear<-data.frame(season, Anglers50,Anglers50low,Anglers50up)
+
+PredictAsp_perYear$Anglers50<-(NumberOfAnglers_s80$Anglers50 * PredictAsp_s$fit)/1000000   #in tonnes 
+PredictAsp_perYear$Anglers50low<-(NumberOfAnglers_s80$Anglers50 * PredictAsp_s$lower)/1000000   
+PredictAsp_perYear$Anglers50up<-(NumberOfAnglers_s80$Anglers50 * PredictAsp_s$upper)/1000000   
+
+###Including uncertainty of the number of anglers
+
+# extrapolate the catch - with number of anglers uncertainty (silver bream cpue is fixed)
+
+#silver bream model with season only
+
+PredictAsp_perYear$Anglers10 <- (NumberOfAnglers_s80$Anglers10 * PredictAsp_s$fit)/1000000 #in tons
+PredictAsp_perYear$Anglers90 <- (NumberOfAnglers_s80$Anglers90 * PredictAsp_s$fit)/1000000
+
+sum(PredictAsp_perYear$Anglers10)   # 0.7 t   
+sum(PredictAsp_perYear$Anglers90)  # 1.7 t    
+
+###Including uncertainty both from cpue and number of anglers estimation
+PredictAsp_perYear$Anglers10low <- (NumberOfAnglers_s80$Anglers10 * PredictAsp_s$lower)/1000000 #in tons
+PredictAsp_perYear$Anglers10up <- (NumberOfAnglers_s80$Anglers10 * PredictAsp_s$upper)/1000000
+PredictAsp_perYear$Anglers90low <- (NumberOfAnglers_s80$Anglers90 * PredictAsp_s$lower)/1000000 
+PredictAsp_perYear$Anglers90up <- (NumberOfAnglers_s80$Anglers90 * PredictAsp_s$upper)/1000000 
+
+
+#save
+#save(file="PredictAsp_perYear80.Rdata", PredictAsp_perYear)
+
+
+```
+
+#Asp graphs - predicted catches per year
+
+```{r}
+load(file="predictions/PredictAsp_perYear80.Rdata")  #with 80% CI of anglers estimation
+
+df.long_asp <- pivot_longer(PredictAsp_perYear, cols=2:10, names_to = "Catches", values_to = "value_t")
+
+#with all uncertainty
+
+
+ggplot(df.long_asp, aes(x=season, y=value_t)) + 
+    geom_boxplot() + ylab("catches, t") +xlab("") +ggtitle("Asp recreational catches per season") +
+    theme_bw()
+```
+
+#Pike prediction - catches per year
+```{r}
+#load(file = "TripsPerSeason80.Rdata") #with 80 % CI of anglers estimation
+
+load(file="predictions/PredictPike_s_glm.Rdata")
+
+###Including uncertainty of the cpue estimation
+
+# extrapolate the total catch per year (number of anglers is fixed - Anglers50)
+
+#model with season only, all data 
+
+#make separate dataframe for catches per year
+season<-c("autumn", "spring", "summer", "winter")
+Anglers50<-c(NA, NA, NA, NA)
+Anglers50low<-c(NA, NA, NA, NA)
+Anglers50up<-c(NA, NA, NA, NA)
+
+PredictPike_perYear<-data.frame(season, Anglers50,Anglers50low,Anglers50up)
+
+PredictPike_perYear$Anglers50<-(NumberOfAnglers_s80$Anglers50 * PredictPike_s$fit)/1000000   #in tonnes 
+PredictPike_perYear$Anglers50low<-(NumberOfAnglers_s80$Anglers50 * PredictPike_s$lower)/1000000   
+PredictPike_perYear$Anglers50up<-(NumberOfAnglers_s80$Anglers50 * PredictPike_s$upper)/1000000   
+
+###Including uncertainty of the number of anglers
+
+# extrapolate the catch - with number of anglers uncertainty (silver bream cpue is fixed)
+
+#silver bream model with season only
+
+PredictPike_perYear$Anglers10 <- (NumberOfAnglers_s80$Anglers10 * PredictPike_s$fit)/1000000 #in tons
+PredictPike_perYear$Anglers90 <- (NumberOfAnglers_s80$Anglers90 * PredictPike_s$fit)/1000000
+
+sum(PredictPike_perYear$Anglers10)   # 0.7 t   
+sum(PredictPike_perYear$Anglers90)  # 1.7 t    
+
+###Including uncertainty both from cpue and number of anglers estimation
+PredictPike_perYear$Anglers10low <- (NumberOfAnglers_s80$Anglers10 * PredictPike_s$lower)/1000000 #in tons
+PredictPike_perYear$Anglers10up <- (NumberOfAnglers_s80$Anglers10 * PredictPike_s$upper)/1000000
+PredictPike_perYear$Anglers90low <- (NumberOfAnglers_s80$Anglers90 * PredictPike_s$lower)/1000000 
+PredictPike_perYear$Anglers90up <- (NumberOfAnglers_s80$Anglers90 * PredictPike_s$upper)/1000000 
+
+
+#save
+#save(file="PredictPike_perYear80.Rdata", PredictPike_perYear)
+```
+
+#Pike graphs - predicted catches per year
+
+```{r}
+load(file="predictions/PredictPike_perYear80.Rdata")  #with 80% CI of anglers estimation
+
+df.long_pike <- pivot_longer(PredictPike_perYear, cols=2:10, names_to = "Catches", values_to = "value_t")
+
+#with all uncertainty
+
+
+ggplot(df.long_pike, aes(x=season, y=value_t)) + 
+    geom_boxplot() + ylab("catches, t") +xlab("") +ggtitle("Pike recreational catches per season") +
+    theme_bw()
+```
+
+
+#Carp prediction - catches per year
+```{r}
+#load(file = "TripsPerSeason80.Rdata") #with 80 % CI of anglers estimation
+
+load(file="predictions/PredictCarp_s_glm.Rdata")
+
+###Including uncertainty of the cpue estimation
+
+# extrapolate the total catch per year (number of anglers is fixed - Anglers50)
+
+#model with season only, all data 
+
+#make separate dataframe for catches per year
+season<-c("autumn", "spring", "summer", "winter")
+Anglers50<-c(NA, NA, NA, NA)
+Anglers50low<-c(NA, NA, NA, NA)
+Anglers50up<-c(NA, NA, NA, NA)
+
+PredictCarp_perYear<-data.frame(season, Anglers50,Anglers50low,Anglers50up)
+
+PredictCarp_perYear$Anglers50<-(NumberOfAnglers_s80$Anglers50 * PredictCarp_s$fit)/1000000   #in tonnes 
+PredictCarp_perYear$Anglers50low<-(NumberOfAnglers_s80$Anglers50 * PredictCarp_s$lower)/1000000   
+PredictCarp_perYear$Anglers50up<-(NumberOfAnglers_s80$Anglers50 * PredictCarp_s$upper)/1000000   
+
+###Including uncertainty of the number of anglers
+
+# extrapolate the catch - with number of anglers uncertainty (silver bream cpue is fixed)
+
+#silver bream model with season only
+
+PredictCarp_perYear$Anglers10 <- (NumberOfAnglers_s80$Anglers10 * PredictCarp_s$fit)/1000000 #in tons
+PredictCarp_perYear$Anglers90 <- (NumberOfAnglers_s80$Anglers90 * PredictCarp_s$fit)/1000000
+
+sum(PredictCarp_perYear$Anglers10)   # 11 t   
+sum(PredictCarp_perYear$Anglers90)  # 28 t    
+
+###Including uncertainty both from cpue and number of anglers estimation
+PredictCarp_perYear$Anglers10low <- (NumberOfAnglers_s80$Anglers10 * PredictCarp_s$lower)/1000000 #in tons
+PredictCarp_perYear$Anglers10up <- (NumberOfAnglers_s80$Anglers10 * PredictCarp_s$upper)/1000000
+PredictCarp_perYear$Anglers90low <- (NumberOfAnglers_s80$Anglers90 * PredictCarp_s$lower)/1000000 
+PredictCarp_perYear$Anglers90up <- (NumberOfAnglers_s80$Anglers90 * PredictCarp_s$upper)/1000000 
+
+
+#save
+#save(file="PredictCarp_perYear80.Rdata", PredictCarp_perYear)
+```
+
+
+#Carp graphs - predicted catches per year
+
+```{r}
+load(file="predictions/PredictCarp_perYear80.Rdata")  #with 80% CI of anglers estimation
+
+df.long_carp <- pivot_longer(PredictCarp_perYear, cols=2:10, names_to = "Catches", values_to = "value_t")
+
+#with all uncertainty
+
+
+ggplot(df.long_carp, aes(x=season, y=value_t)) + 
+    geom_boxplot() + ylab("catches, t") +xlab("") +ggtitle("Carp recreational catches per season") +
+    theme_bw()
+```
+
+
+#Catfish prediction - catches per year
+```{r}
+#load(file = "TripsPerSeason80.Rdata") #with 80 % CI of anglers estimation
+
+load(file="predictions/PredictCatf_s_glm.Rdata")
+
+###Including uncertainty of the cpue estimation
+
+# extrapolate the total catch per year (number of anglers is fixed - Anglers50)
+
+#model with season only, all data 
+
+#make separate dataframe for catches per year
+season<-c("autumn", "spring", "summer", "winter")
+Anglers50<-c(NA, NA, NA, NA)
+Anglers50low<-c(NA, NA, NA, NA)
+Anglers50up<-c(NA, NA, NA, NA)
+
+PredictCatf_perYear<-data.frame(season, Anglers50,Anglers50low,Anglers50up)
+
+PredictCatf_perYear$Anglers50<-(NumberOfAnglers_s80$Anglers50 * PredictCatf_s$fit)/1000000   #in tonnes 
+PredictCatf_perYear$Anglers50low<-(NumberOfAnglers_s80$Anglers50 * PredictCatf_s$lower)/1000000   
+PredictCatf_perYear$Anglers50up<-(NumberOfAnglers_s80$Anglers50 * PredictCatf_s$upper)/1000000   
+
+###Including uncertainty of the number of anglers
+
+# extrapolate the catch - with number of anglers uncertainty (silver bream cpue is fixed)
+
+#silver bream model with season only
+
+PredictCatf_perYear$Anglers10 <- (NumberOfAnglers_s80$Anglers10 * PredictCatf_s$fit)/1000000 #in tons
+PredictCatf_perYear$Anglers90 <- (NumberOfAnglers_s80$Anglers90 * PredictCatf_s$fit)/1000000
+
+sum(PredictCatf_perYear$Anglers10)   # 7.6 t   
+sum(PredictCatf_perYear$Anglers90)  # 18 t    
+
+###Including uncertainty both from cpue and number of anglers estimation
+PredictCatf_perYear$Anglers10low <- (NumberOfAnglers_s80$Anglers10 * PredictCatf_s$lower)/1000000 #in tons
+PredictCatf_perYear$Anglers10up <- (NumberOfAnglers_s80$Anglers10 * PredictCatf_s$upper)/1000000
+PredictCatf_perYear$Anglers90low <- (NumberOfAnglers_s80$Anglers90 * PredictCatf_s$lower)/1000000 
+PredictCatf_perYear$Anglers90up <- (NumberOfAnglers_s80$Anglers90 * PredictCatf_s$upper)/1000000 
+
+
+#save
+#save(file="PredictCatf_perYear80.Rdata", PredictCatf_perYear)
+```
+
+#Catfish graphs - predicted catches per year
+
+```{r}
+load(file="predictions/PredictCatf_perYear80.Rdata")  #with 80% CI of anglers estimation
+
+df.long_catf <- pivot_longer(PredictCatf_perYear, cols=2:10, names_to = "Catches", values_to = "value_t")
+
+#with all uncertainty
+ggplot(df.long_catf, aes(x=season, y=value_t)) + 
+    geom_boxplot() + ylab("catches, t") +xlab("") +ggtitle("Catfish recreational catches per season") +
+    theme_bw()
+```
+
+#Roach prediction
+
+```{r}
+
+# - just intercept is used, season was not signif
+# #load estimated daily angler number
+
+load(file = "dailyAnglerNumber2.RData") #with 80% CI of anglers estimation
+load(file = "coefficients.RData")
+#View(NumberOfAnglers)  #2020-03-01 to 2021-02-28
+
+#estimate number of fishing trips per year 
+Trip50<-sum(NumberOfAnglers$totalAnglers50)
+Trip10<-sum(NumberOfAnglers$totalAnglers10)
+Trip90<-sum(NumberOfAnglers$totalAnglers90)
+
+Trips<- data.frame(Trip50,Trip10, Trip90)
+
+#per year (in tonnes) 
+
+PredictRoach<-t[which(t$Species=="Roach"),]
+str(PredictRoach)
+PredictRoach$`Estimate, g`<-as.numeric(PredictRoach$`Estimate, g`)
+PredictRoach$`lowCI_2.5%`<-as.numeric(PredictRoach$`lowCI_2.5`)
+PredictRoach$`upCI_97.5%`<-as.numeric(PredictRoach$`upCI_97.5%`)
+
+#make separate dataframe for roach catches per year
+Anglers50<-NA
+Anglers50low<-NA
+Anglers50up<-NA
+
+PredictRoach_perYear<-data.frame(Anglers50,Anglers50low,Anglers50up)
+
+PredictRoach_perYear$Anglers50 <- (Trips$Trip50 *PredictRoach$`Estimate, g`)/1000000 #in tones, fit&fit
+PredictRoach_perYear$Anglers50low<-(Trips$Trip50 * PredictRoach$`lowCI_2.5%`)/1000000  #with cpue uncertainty
+PredictRoach_perYear$Anglers50up<-(Trips$Trip50 * PredictRoach$`upCI_97.5%`)/1000000 #with cpue uncertainty
+
+#with anglers uncertainty (cpue is fixed)
+
+PredictRoach_perYear$Anglers10 <- (Trips$Trip10 * PredictRoach$`Estimate, g`)/1000000 #in tonnes
+PredictRoach_perYear$Anglers90 <- (Trips$Trip90 * PredictRoach$`Estimate, g`)/1000000
+
+sum(PredictRoach_perYear$Anglers10)   # 2.2 t with 80 % CI of anglers estimation
+sum(PredictRoach_perYear$Anglers90)   #5.3 t with 80 % CI of anglers estimation
+
+
+
+###Including uncertainty both from cpue and number of anglers estimation
+PredictRoach_perYear$Anglers10low <- (Trips$Trip10 * PredictRoach$`lowCI_2.5%`)/1000000 #in tonnes
+PredictRoach_perYear$Anglers10up <- (Trips$Trip10 * PredictRoach$`upCI_97.5%`)/1000000 #in tonnes
+
+PredictRoach_perYear$Anglers90low <- (Trips$Trip90 * PredictRoach$`lowCI_2.5%`)/1000000 #in tonnes
+PredictRoach_perYear$Anglers90up <- (Trips$Trip90 * PredictRoach$`upCI_97.5%`)/1000000 #in tonnes
+
+
+#save
+#save(file="PredictRoach_perYear80.Rdata", PredictRoach_perYear)
+
+
+
+
+
+```
+
+
+
+#total catch prediction - catches per year (all species combined)
+
+```{r}
+
+#load(file = "TripsPerSeason80.Rdata") #with 80 % CI of anglers estimation
+
+load(file="predictions/PredictAll_s_glm.Rdata")
+
+###Including uncertainty of the cpue estimation
+# extrapolate the total catch per year (number of anglers is fixed - Anglers50)
+
+#all species combined model with season only, all data 
+
+season<-c("autumn", "spring", "summer", "winter")
+Anglers50<-c(NA, NA, NA, NA)
+Anglers50low<-c(NA, NA, NA, NA)
+Anglers50up<-c(NA, NA, NA, NA)
+
+Predictall_perYear<-data.frame(season, Anglers50,Anglers50low,Anglers50up)
+
+Predictall_perYear$Anglers50<-(NumberOfAnglers_s80$Anglers50 * Predictall_s$fit)/1000000   #in tonnes 
+Predictall_perYear$Anglers50low<-(NumberOfAnglers_s80$Anglers50 * Predictall_s$lower)/1000000   
+Predictall_perYear$Anglers50up<-(NumberOfAnglers_s80$Anglers50 * Predictall_s$upper)/1000000   
+
+
+###Including uncertainty of the number of anglers
+# extrapolate the catch - with number of anglers uncertainty (cpue is fixed)
+
+Predictall_perYear$Anglers10 <- (NumberOfAnglers_s80$Anglers10 * Predictall_s$fit)/1000000 #in tonnes
+Predictall_perYear$Anglers90 <- (NumberOfAnglers_s80$Anglers90 * Predictall_s$fit)/1000000
+
+sum(Predictall_perYear$Anglers10)   # 93.78 tonnes   
+sum(Predictall_perYear$Anglers90)  # 227.19 tonnes    
+
+
+###Including uncertainty both from cpue and number of anglers estimation
+Predictall_perYear$Anglers10low <- (NumberOfAnglers_s80$Anglers10 * Predictall_s$lower)/1000000 #in tonnes
+Predictall_perYear$Anglers10up <- (NumberOfAnglers_s80$Anglers10 * Predictall_s$upper)/1000000 #in tonnes
+
+Predictall_perYear$Anglers90low <- (NumberOfAnglers_s80$Anglers90 * Predictall_s$lower)/1000000 #in tonnes
+Predictall_perYear$Anglers90up <- (NumberOfAnglers_s80$Anglers90 * Predictall_s$upper)/1000000 #in tonnes
+
+#save
+#save(file="PredictTotalcatch_perYear80.Rdata", Predictall_perYear)
+
+
+```
+
+
+#total catch graphs - predicted catches per year
+
+
+```{r}
+
+
+load(file="predictions/PredictTotalcatch_perYear80.Rdata")  #with 80% CI of anglers estimation
+
+df.long_all <- pivot_longer(Predictall_perYear, cols=2:10, names_to = "Catches", values_to = "value_t")
+
+#with all uncertainty
+
+
+ggplot(df.long_all, aes(x=season, y=value_t)) + 
+    geom_boxplot() + ylab("catches, t") +xlab("") +ggtitle("Total recreational catches per season") +
+    theme_bw()
+
+```
+
+### ### Table 1: recreational catches
+recreational catches of each and all species combined (in tons, per year)
+all uncertainty, 80% CI of anglers estimation
+
+```{r}
+
+#with 80% CI of anglers estimation
+
+load(file="predictions/PredictPikeperch_perYear80.Rdata")
+load(file="predictions/PredictPerch_perYear80.Rdata")
+load(file="predictions/PredictBream_perYear80.Rdata")
+load(file="predictions/PredictSBream_perYear80.Rdata")
+load(file="predictions/PredictRoach_perYear80.Rdata")
+load(file="predictions/PredictTotalcatch_perYear80.Rdata")
+
+load(file="predictions/PredictKarosas_perYear80.Rdata")
+load(file="predictions/PredictVimba_perYear80.Rdata")
+load(file="predictions/PredictAsp_perYear80.Rdata")
+load(file="predictions/PredictPike_perYear80.Rdata")
+load(file="predictions/PredictCarp_perYear80.Rdata")
+load(file="predictions/PredictCatf_perYear80.Rdata")
+
+
+PredictPikeperch_perYear$Species<-"Pikeperch"
+PredictPerch_perYear$Species<-"Perch"
+PredictBream_perYear$Species<-"Bream"
+PredictSBream_perYear$Species<-"Silver bream"
+PredictRoach_perYear$Species<-"Roach"
+PredictRoach_perYear$season<-"NA"
+Predictall_perYear$Species<-"Total catch"
+
+PredictKarosas_perYear$Species<-"Crussian carp"
+PredictVimba_perYear$Species<-"Vimba bream"
+PredictAsp_perYear$Species<-"Asp"
+PredictPike_perYear$Species<-"Pike"
+PredictCarp_perYear$Species<-"Carp"
+PredictCatf_perYear$Species<-"Catfish"
+
+
+a<-rbind(PredictPikeperch_perYear, PredictPerch_perYear, PredictBream_perYear, PredictSBream_perYear, Predictall_perYear, PredictKarosas_perYear, PredictVimba_perYear,PredictAsp_perYear, PredictPike_perYear,  PredictCarp_perYear, PredictCatf_perYear)
+
+a2<-rbind(a, PredictRoach_perYear)
+
+#from this table we only present values with full uncertainty of GLMs and anglers
+
+#save
+#write.csv(a2, "Each and all species recreational catches.csv")
+
+
+
+```
