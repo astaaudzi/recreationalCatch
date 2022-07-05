@@ -1,6 +1,6 @@
 ---
-title: "Angler surveys analysis"
-author: "Egle & Asta"
+title: "Analysis of data for estimating fish population trends in Kaunas WR"
+author: "Egle Jakubaviciute, Justas Dainys, Augustas Morkvenas, Asta Audzijonyte, et al."
 date: "21/12/2021"
 output: html_document
 ---
@@ -31,8 +31,270 @@ library(sjPlot)
 library(broom.mixed)
 library(jtools)
 library(ggstance)
+library(ggridges)
+library(readxl)
+library(png)
+library(patchwork)
+library(ggpubr)
 
 ```
+
+# Figure 2: comparing trends
+
+Here we load independently assembled data for scientific CPUE trends, commercial catches and recreational catch estimates (see below)
+
+```{r}
+
+#SE updated 2022-06-29
+standart_cpue<-read.csv("data/comm_recrCatch_CPUE_SE.csv")
+
+str(standart_cpue)
+
+
+# Prepare data for plotting 
+
+#select species and scale by the maximum value in each species separately
+#(use cpue scaled to 1 and corresponding se in the input file).
+
+myspecies  <- standart_cpue %>% filter(Species=="silverbream")
+
+max(myspecies$cpue_new_scaled_to1, na.rm=TRUE) 
+
+myspecies$stand.cpue.scaled <- myspecies$cpue_new_scaled_to1/max(myspecies$cpue_new_scaled_to1, na.rm=TRUE)   
+plot(myspecies$cpue_new_scaled_to1, myspecies$stand.cpue.scaled)
+## also scale se 
+myspecies$Std_Error_stand_cpue.scaled <- myspecies$se_new_scaled*myspecies$stand.cpue.scaled/myspecies$cpue_new_scaled_to1
+plot(myspecies$Std_Error_stand_cpue.scaled, myspecies$se_new_scaled)
+
+
+#scale catches
+
+#now we scale everything by one max of commercial and recreational catches (EJ: we have median of commercial catches, so we use "median" of recreational catches as well)
+catchmax <- max(myspecies$commercial.catches, myspecies$recreat.catches.Anglers50, na.rm = T)  
+catchmax
+
+#catchmax <- max(myspecies$commercial.catches, myspecies$recreat.catches.Anglers90, na.rm = T) #EJ
+
+myspecies$commercial.catches.scaled <- myspecies$commercial.catches/catchmax
+myspecies$recreat.catches.Anglers10.scaled <- myspecies$recreat.catches.Anglers10/catchmax
+myspecies$recreat.catches_Alluncert_min.scaled <- myspecies$recreat.catches_Alluncert_min/catchmax
+myspecies$recreat.catches.Anglers50.scaled <- myspecies$recreat.catches.Anglers50/catchmax
+myspecies$recreat.catches.Anglers90.scaled <- myspecies$recreat.catches.Anglers90/catchmax
+myspecies$recreat.catches_Alluncert_max.scaled <- myspecies$recreat.catches_Alluncert_max/catchmax
+
+plot_data <- myspecies %>% dplyr::select(Year, commercial.catches.scaled, stand.cpue.scaled, Std_Error_stand_cpue.scaled, recreat.catches_Alluncert_min.scaled,         recreat.catches_Alluncert_max.scaled, recreat.catches.Anglers50.scaled, recreat.catches.Anglers10.scaled, recreat.catches.Anglers90.scaled)
+
+names(plot_data)<- c('Year', 'Commercial', 'cpue', 'cpue_se', "rec_min", 'rec_max', 'rec_mean', 'recA10', 'recA90')
+
+plot_data$Year<-as.double(plot_data$Year)
+plot_data$species <- "Silverbream"
+
+plot_data_main <- rbind(plot_data_main, plot_data)
+#save(plot_data_main, file = "data/plot_data_main.RData")
+
+```
+
+### Load data
+
+```{r}
+
+load(file = "data/plot_data_main.RData")
+
+roach_img <- readPNG("data/roach.png", native = TRUE)
+bream_img <- readPNG("data/bream.png", native = TRUE)
+perch_img <- readPNG("data/perch.png", native = TRUE)
+pikeperch_img <- readPNG("data/pike.png", native = TRUE)
+silverbream_img <- readPNG("data/silver.png", native = TRUE)
+legend6<-readPNG("data/tbbl.png", native = TRUE)
+
+
+```
+
+### roach
+
+```{r}
+plot_data <- plot_data_main %>% filter (species == "Roach")
+
+plot1 <- ggplot(plot_data, aes(x=Year))+
+  geom_line(aes(y=Commercial), lwd=1.2, color = "orange") +
+  geom_errorbar(aes(ymin = cpue , ymax = cpue+cpue_se), width = 0.1, colour='steelblue') +
+  geom_line(aes(y=cpue), lwd=1.2, color = 'steelblue', alpha=1) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n=5)) +
+  theme_light()+
+  theme(
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank (), 
+      panel.border = element_blank(), 
+      axis.line = element_line(), 
+      axis.title = element_blank(), 
+      axis.text=element_text(size=12)) +
+  labs(title =substitute(paste("Roach", italic(" (Rutillus rutillus)"))))+
+  geom_text(x=2004, y= 1.05, label = '163 t', size=5, fontface=3, color="orange")+
+  geom_segment(aes(x = 2016, y = 	rec_mean[max(dim(plot_data))[1]], xend = 2021, yend = 	rec_mean[max(dim(plot_data))[1]]), color="red", lwd=1.5)+
+  geom_segment(aes(x = 1990, y = 	rec_mean[max(dim(plot_data))[1]]/2, xend = 2016, yend = rec_mean[max(dim(plot_data))[1]]),lwd=1, color="red", linetype=2)+
+  #geom_text(x=2018, y= 0.5, label = 'Scientific CPUE (+error)', size=4, fontface=3, color = "steelblue")+
+  geom_text(x=2019, y= 0.1, label = '3.4 t', size=5, fontface=3, color= "red")+
+     ylim(0,1.5) +
+  annotate("rect", xmin=2016, xmax=2021, ymin=plot_data$rec_min[max(dim(plot_data))[1]], ymax=plot_data$rec_max[max(dim(plot_data))[1]],  alpha=0.2, fill='red')  #include CI of recreational catches. EJ: Why not to just write ymin=plot_data$rec_min
+plot1
+
+plot2 <- plot1 +
+  inset_element(p=roach_img, left = 0.4, bottom = 0.75, right = 0.8, top = 1.05)
+plot2
+
+roach<-plot2
+
+```
+
+#bream 
+
+```{r}
+
+plot_data <- plot_data_main %>% filter (species == "Bream")
+
+plot1 <- ggplot(plot_data, aes(x=Year))+
+  geom_line(aes(y=Commercial), lwd=1.2, color = "orange") +
+  geom_errorbar(aes(ymin = cpue , ymax = cpue+cpue_se), width = 0.1, colour='steelblue') +
+  geom_line(aes(y=cpue), lwd=1.2, color = 'steelblue', alpha=1) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n=5)) +
+  theme_light()+
+  theme(
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank (), 
+      panel.border = element_blank(), 
+      axis.line = element_line(), 
+      axis.title = element_blank(), 
+      axis.text=element_text(size=12)) + 
+  labs(title =substitute(paste("Bream", italic(" (Abramis brama)"))))+
+  geom_text(x=1997, y= 0.7, label = '20 t', size=5, fontface=3, color="orange")+
+  #geom_text(x=2018, y= 0.5, label = 'Scientific CPUE (+error)', size=4, fontface=3, color = "steelblue")+
+  geom_text(x=2019, y= 1.05, label = '32 t', size=5, fontface=3, color= "red")+
+  geom_segment(aes(x = 2016, y = 	rec_mean[max(dim(plot_data))[1]], xend = 2021, yend = 	rec_mean[max(dim(plot_data))[1]]), color="red", lwd=1.5)+
+  geom_segment(aes(x = 1990, y = 	rec_mean[max(dim(plot_data))[1]]/2, xend = 2016, yend = rec_mean[max(dim(plot_data))[1]]),lwd=1, color="red", linetype=2)+
+  ylim(0,1.5)+
+  annotate("rect", xmin=2016, xmax=2021, ymin=plot_data$rec_min[max(dim(plot_data))[1]], ymax=1.2,  alpha=0.2, fill='red')  #upper CI set as 1.5 
+  #annotate("rect", xmin=2016, xmax=2021, ymin=plot_data$rec_min[max(dim(plot_data))[1]], ymax=plot_data$rec_max[max(dim(plot_data))[1]],  alpha=0.2, fill='red')  #all CI - very high upper value
+plot1
+
+plot2 <- plot1 +
+  inset_element(p=bream_img, left = 0.3, bottom = 0.7, right = 0.8, top = 1.05)
+plot2
+
+bream<-plot2
+```
+
+#silver bream 
+
+```{r}
+
+plot_data <- plot_data_main %>% filter (species == "Silverbream")
+
+plot1 <- ggplot(plot_data, aes(x=Year))+
+  geom_line(aes(y=Commercial), lwd=1.2, color = "orange") +
+  geom_errorbar(aes(ymin = cpue , ymax = cpue+cpue_se), width = 0.1, colour='steelblue') +
+  geom_line(aes(y=cpue), lwd=1.2, color = 'steelblue', alpha=1) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n=5)) +
+  theme_light()+
+theme(
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank (), 
+      panel.border = element_blank(), 
+      axis.line = element_line(), 
+      axis.title = element_blank(), 
+      axis.text=element_text(size=12)) + 
+  labs(title =substitute(paste("Silver bream", italic(" (Blicca bjoerkna)"))))+
+  geom_text(x=2007.5, y= 1, label = '36 t', size=5, fontface=3, color="orange")+
+  #geom_text(x=2018, y= 0.5, label = 'Scientific CPUE (+error)', size=4, fontface=3, color = "steelblue")+
+  geom_text(x=2019, y= 0.18, label = '4 t', size=5, fontface=3, color= "red")+
+  geom_segment(aes(x = 2016, y = 	rec_mean[max(dim(plot_data))[1]], xend = 2021, yend = 	rec_mean[max(dim(plot_data))[1]]), color="red", lwd=1.5)+
+  geom_segment(aes(x = 1990, y = 	rec_mean[max(dim(plot_data))[1]]/2, xend = 2016, yend = rec_mean[max(dim(plot_data))[1]]),lwd=1, color="red", linetype=2)+
+  ylim(0,1.5)+
+  annotate("rect", xmin=2016, xmax=2021, ymin=plot_data$rec_min[max(dim(plot_data))[1]], ymax=plot_data$rec_max[max(dim(plot_data))[1]],  alpha=0.2, fill='red')  #all CI 
+plot1
+
+plot2 <- plot1 +
+  inset_element(p=silverbream_img, left = 0.3, bottom = 0.75, right = 0.85, top = 1.05)
+plot2
+
+silverbream <-plot2
+```
+
+#perch 
+
+```{r}
+
+plot_data <- plot_data_main %>% filter (species == "Perch")
+
+plot1 <- ggplot(plot_data, aes(x=Year))+
+  geom_line(aes(y=Commercial), lwd=1.2, color = "orange") +
+  geom_errorbar(aes(ymin = cpue , ymax = cpue+cpue_se), width = 0.1, colour='steelblue') +
+  geom_line(aes(y=cpue), lwd=1.2, color = 'steelblue', alpha=1) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n=5)) +
+  theme_light()+
+theme(
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank (), 
+      panel.border = element_blank(), 
+      axis.line = element_line(), 
+      axis.title = element_blank(), 
+      axis.text=element_text(size=12)) + 
+  labs(title =substitute(paste("Perch", italic(" (Perca fluviatilis)"))))+
+  geom_text(x=2006.5, y= 0.15, label = '1 t', size=5, fontface=3, color="orange")+
+  #geom_text(x=2018, y= 0.5, label = 'Scientific CPUE (+error)', size=4, fontface=3, color = "steelblue")+
+  geom_text(x=2019, y= 1.05, label = '9 t', size=5, fontface=3, color= "red")+
+  geom_segment(aes(x = 2016, y = 	rec_mean[max(dim(plot_data))[1]], xend = 2021, yend = 	rec_mean[max(dim(plot_data))[1]]), color="red", lwd=1.5)+
+  geom_segment(aes(x = 1990, y = 	rec_mean[max(dim(plot_data))[1]]/2, xend = 2016, yend = rec_mean[max(dim(plot_data))[1]]),lwd=1, color="red", linetype=2)+
+  ylim(0,1.5)+
+  annotate("rect", xmin=2016, xmax=2021, ymin=plot_data$rec_min[max(dim(plot_data))[1]], ymax=1.2,  alpha=0.2, fill='red')  #upper CI set as 1.2
+  #annotate("rect", xmin=2016, xmax=2021, ymin=plot_data$rec_min[max(dim(plot_data))[1]], ymax=plot_data$rec_max[max(dim(plot_data))[1]],  alpha=0.2, fill='red')  #all CI - very high upper value
+plot1
+
+plot2 <- plot1 +
+  inset_element(p=perch_img, left = 0.45, bottom = 0.8, right = 0.85, top = 1.05)
+plot2
+
+perch <-plot2
+
+
+```
+
+#pikeperch
+
+```{r}
+
+plot_data <- plot_data_main %>% filter (species == "Pikeperch")
+
+plot1 <- ggplot(plot_data, aes(x=Year))+
+  geom_line(aes(y=Commercial), lwd=1.2, color = "orange") +
+  geom_errorbar(aes(ymin = cpue , ymax = cpue+cpue_se), width = 0.1, colour='steelblue') +
+  geom_line(aes(y=cpue), lwd=1.2, color = 'steelblue', alpha=1) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n=5)) +
+  theme_light()+
+theme(
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank (), 
+      panel.border = element_blank(), 
+      axis.line = element_line(), 
+      axis.title = element_blank()) + 
+    labs(title =substitute(paste("Pikeperch", italic(" (Sander lucioperca)"))))+
+  geom_text(x=2003, y= 0.6, label = '10 t', size=5, fontface=3, color="orange")+
+  #geom_text(x=2018, y= 0.5, label = 'Scientific CPUE (+error)', size=4, fontface=3, color = "steelblue")+
+  geom_text(x=2019, y= 1.1, label = '19 t', size=5, fontface=3, color= "red")+
+  geom_segment(aes(x = 2016, y = 	rec_mean[max(dim(plot_data))[1]], xend = 2021, yend = 	rec_mean[max(dim(plot_data))[1]]), color="red", lwd=1.5)+
+  geom_segment(aes(x = 1990, y = 	rec_mean[max(dim(plot_data))[1]]/2, xend = 2016, yend = rec_mean[max(dim(plot_data))[1]]),lwd=1, color="red", linetype=2)+
+  ylim(0,1.8)+
+  annotate("rect", xmin=2016, xmax=2021, ymin=plot_data$rec_min[max(dim(plot_data))[1]], ymax=1.2,  alpha=0.2, fill='red')  #upper CI set as 1.2
+  #annotate("rect", xmin=2016, xmax=2021, ymin=plot_data$rec_min[max(dim(plot_data))[1]], ymax=plot_data$rec_max[max(dim(plot_data))[1]],  alpha=0.2, fill='red')  #all CI - very high upper value
+plot1
+
+plot2 <- plot1 +
+  inset_element(p=pikeperch_img, left = 0.4, bottom = 0.7, right = 0.9, top = 1.05)
+plot2
+
+pikeperch<-plot2
+
+```
+
 
 <!-- ### glm to estimate catch per trip -->
 <!-- The Tweedie package allows you to fit a glm with any power function and any power link. In the glm family call, var.power is the α parameter so that var.power=1.1 specifies α=1.1. The var.power refers to exponent of the glm variance function, so that var.power=0 specifies a normal family, var.power=1 means Poisson family, var.power=2 means gamma family, var.power=3 means inverse Gaussian family and so on. Values between 0 and 1 are not permitted but virtually anything else in allowed. -->
@@ -42,6 +304,7 @@ library(ggstance)
 <!-- The Tweedie (1984) distribution has nonnegative support and can have a discrete mass at zero, making it useful to model responses that are a mixture of zeros and positive values.  -->
 
 <!-- One of the fundamental motivations for generalized linear models (GLMs) is that they model the data as it is instead of transforming it. No transformation, either by you or by the model. -->
+
 ### load data
 
 Data from recreational catch surveys
