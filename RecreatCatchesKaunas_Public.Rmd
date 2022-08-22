@@ -53,27 +53,34 @@ str(standart_cpue)
 
 # Prepare data for plotting 
 
-#select species and scale by the maximum value in each species separately
-#(use cpue scaled to 1 and corresponding se in the input file).
+#list of species 
+species <- c("roach"    ,   "perch"     ,  "pikeperch"  , "bream"  ,     "silverbream")
 
-myspecies  <- standart_cpue %>% filter(Species=="silverbream")
+plot_data_main <- matrix(NA, nrow = 0, ncol = 9)
 
-max(myspecies$cpue_new_scaled_to1, na.rm=TRUE) 
+#prepare data in a loop
+for (i in length(species)) {
 
-myspecies$stand.cpue.scaled <- myspecies$cpue_new_scaled_to1/max(myspecies$cpue_new_scaled_to1, na.rm=TRUE)   
-plot(myspecies$cpue_new_scaled_to1, myspecies$stand.cpue.scaled)
+myspecies  <- standart_cpue %>% filter(Species==species[i])
+
+#check max value
+max(myspecies$sc_cpue, na.rm=TRUE) 
+
+#scale by the maximum scientific cpue for plotting
+myspecies$stand.cpue.scaled <- myspecies$sc_cpue/max(myspecies$sc_cpue, na.rm=TRUE)   
+#check that the relationship is linear and that scaling was applied correctly
+plot(myspecies$sc_cpue, myspecies$stand.cpue.scaled)
 ## also scale se 
-myspecies$Std_Error_stand_cpue.scaled <- myspecies$se_new_scaled*myspecies$stand.cpue.scaled/myspecies$cpue_new_scaled_to1
-plot(myspecies$Std_Error_stand_cpue.scaled, myspecies$se_new_scaled)
+myspecies$Std_Error_stand_cpue.scaled <- myspecies$sc_se_cpue*myspecies$stand.cpue.scaled/myspecies$sc_cpue
+#check
+plot(myspecies$Std_Error_stand_cpue.scaled, myspecies$sc_se_cpue)
 
 
 #scale catches
 
-#now we scale everything by one max of commercial and recreational catches (EJ: we have median of commercial catches, so we use "median" of recreational catches as well)
+#now we scale everything by one max of commercial and recreational catches (we have median of commercial catches, so we use "median" of recreational catches as well)
 catchmax <- max(myspecies$commercial.catches, myspecies$recreat.catches.Anglers50, na.rm = T)  
 catchmax
-
-#catchmax <- max(myspecies$commercial.catches, myspecies$recreat.catches.Anglers90, na.rm = T) #EJ
 
 myspecies$commercial.catches.scaled <- myspecies$commercial.catches/catchmax
 myspecies$recreat.catches.Anglers10.scaled <- myspecies$recreat.catches.Anglers10/catchmax
@@ -87,9 +94,11 @@ plot_data <- myspecies %>% dplyr::select(Year, commercial.catches.scaled, stand.
 names(plot_data)<- c('Year', 'Commercial', 'cpue', 'cpue_se', "rec_min", 'rec_max', 'rec_mean', 'recA10', 'recA90')
 
 plot_data$Year<-as.double(plot_data$Year)
-plot_data$species <- "Silverbream"
-
+plot_data$species <- species[i]
 plot_data_main <- rbind(plot_data_main, plot_data)
+
+}
+
 #save(plot_data_main, file = "data/plot_data_main.RData")
 
 ```
@@ -113,7 +122,7 @@ legend6<-readPNG("data/tbbl.png", native = TRUE)
 ### roach
 
 ```{r}
-plot_data <- plot_data_main %>% filter (species == "Roach")
+plot_data <- plot_data_main %>% filter (species == "roach")
 
 plot1 <- ggplot(plot_data, aes(x=Year))+
   geom_line(aes(y=Commercial), lwd=1.2, color = "orange") +
@@ -129,11 +138,11 @@ plot1 <- ggplot(plot_data, aes(x=Year))+
       axis.title = element_blank(), 
       axis.text=element_text(size=12)) +
   labs(title =substitute(paste("Roach", italic(" (Rutillus rutillus)"))))+
-  geom_text(x=2004, y= 1.05, label = '163 t', size=5, fontface=3, color="orange")+
+  geom_text(x=2004, y= 1.05, label = '163 tons', size=5, fontface=3, color="orange")+
   geom_segment(aes(x = 2016, y = 	rec_mean[max(dim(plot_data))[1]], xend = 2021, yend = 	rec_mean[max(dim(plot_data))[1]]), color="red", lwd=1.5)+
   geom_segment(aes(x = 1990, y = 	rec_mean[max(dim(plot_data))[1]]/2, xend = 2016, yend = rec_mean[max(dim(plot_data))[1]]),lwd=1, color="red", linetype=2)+
   #geom_text(x=2018, y= 0.5, label = 'Scientific CPUE (+error)', size=4, fontface=3, color = "steelblue")+
-  geom_text(x=2019, y= 0.1, label = '3.4 t', size=5, fontface=3, color= "red")+
+  geom_text(x=2019, y= 0.1, label = '3.4 tons', size=5, fontface=3, color= "red")+
      ylim(0,1.5) +
   annotate("rect", xmin=2016, xmax=2021, ymin=plot_data$rec_min[max(dim(plot_data))[1]], ymax=plot_data$rec_max[max(dim(plot_data))[1]],  alpha=0.2, fill='red')  #include CI of recreational catches. EJ: Why not to just write ymin=plot_data$rec_min
 plot1
@@ -150,7 +159,7 @@ roach<-plot2
 
 ```{r}
 
-plot_data <- plot_data_main %>% filter (species == "Bream")
+plot_data <- plot_data_main %>% filter (species == "bream")
 
 plot1 <- ggplot(plot_data, aes(x=Year))+
   geom_line(aes(y=Commercial), lwd=1.2, color = "orange") +
@@ -166,9 +175,9 @@ plot1 <- ggplot(plot_data, aes(x=Year))+
       axis.title = element_blank(), 
       axis.text=element_text(size=12)) + 
   labs(title =substitute(paste("Bream", italic(" (Abramis brama)"))))+
-  geom_text(x=1997, y= 0.7, label = '20 t', size=5, fontface=3, color="orange")+
+  geom_text(x=1997, y= 0.7, label = '20 tons', size=5, fontface=3, color="orange")+
   #geom_text(x=2018, y= 0.5, label = 'Scientific CPUE (+error)', size=4, fontface=3, color = "steelblue")+
-  geom_text(x=2019, y= 1.05, label = '32 t', size=5, fontface=3, color= "red")+
+  geom_text(x=2019, y= 1.05, label = '32 tons', size=5, fontface=3, color= "red")+
   geom_segment(aes(x = 2016, y = 	rec_mean[max(dim(plot_data))[1]], xend = 2021, yend = 	rec_mean[max(dim(plot_data))[1]]), color="red", lwd=1.5)+
   geom_segment(aes(x = 1990, y = 	rec_mean[max(dim(plot_data))[1]]/2, xend = 2016, yend = rec_mean[max(dim(plot_data))[1]]),lwd=1, color="red", linetype=2)+
   ylim(0,1.5)+
@@ -187,7 +196,7 @@ bream<-plot2
 
 ```{r}
 
-plot_data <- plot_data_main %>% filter (species == "Silverbream")
+plot_data <- plot_data_main %>% filter (species == "silverbream")
 
 plot1 <- ggplot(plot_data, aes(x=Year))+
   geom_line(aes(y=Commercial), lwd=1.2, color = "orange") +
@@ -203,9 +212,9 @@ theme(
       axis.title = element_blank(), 
       axis.text=element_text(size=12)) + 
   labs(title =substitute(paste("Silver bream", italic(" (Blicca bjoerkna)"))))+
-  geom_text(x=2007.5, y= 1, label = '36 t', size=5, fontface=3, color="orange")+
+  geom_text(x=2007.5, y= 1, label = '36 tons', size=5, fontface=3, color="orange")+
   #geom_text(x=2018, y= 0.5, label = 'Scientific CPUE (+error)', size=4, fontface=3, color = "steelblue")+
-  geom_text(x=2019, y= 0.18, label = '4 t', size=5, fontface=3, color= "red")+
+  geom_text(x=2019, y= 0.18, label = '4 tons', size=5, fontface=3, color= "red")+
   geom_segment(aes(x = 2016, y = 	rec_mean[max(dim(plot_data))[1]], xend = 2021, yend = 	rec_mean[max(dim(plot_data))[1]]), color="red", lwd=1.5)+
   geom_segment(aes(x = 1990, y = 	rec_mean[max(dim(plot_data))[1]]/2, xend = 2016, yend = rec_mean[max(dim(plot_data))[1]]),lwd=1, color="red", linetype=2)+
   ylim(0,1.5)+
@@ -223,7 +232,7 @@ silverbream <-plot2
 
 ```{r}
 
-plot_data <- plot_data_main %>% filter (species == "Perch")
+plot_data <- plot_data_main %>% filter (species == "perch")
 
 plot1 <- ggplot(plot_data, aes(x=Year))+
   geom_line(aes(y=Commercial), lwd=1.2, color = "orange") +
@@ -239,9 +248,9 @@ theme(
       axis.title = element_blank(), 
       axis.text=element_text(size=12)) + 
   labs(title =substitute(paste("Perch", italic(" (Perca fluviatilis)"))))+
-  geom_text(x=2006.5, y= 0.15, label = '1 t', size=5, fontface=3, color="orange")+
+  geom_text(x=2006.5, y= 0.15, label = '1 tons', size=5, fontface=3, color="orange")+
   #geom_text(x=2018, y= 0.5, label = 'Scientific CPUE (+error)', size=4, fontface=3, color = "steelblue")+
-  geom_text(x=2019, y= 1.05, label = '9 t', size=5, fontface=3, color= "red")+
+  geom_text(x=2019, y= 1.05, label = '9 tons', size=5, fontface=3, color= "red")+
   geom_segment(aes(x = 2016, y = 	rec_mean[max(dim(plot_data))[1]], xend = 2021, yend = 	rec_mean[max(dim(plot_data))[1]]), color="red", lwd=1.5)+
   geom_segment(aes(x = 1990, y = 	rec_mean[max(dim(plot_data))[1]]/2, xend = 2016, yend = rec_mean[max(dim(plot_data))[1]]),lwd=1, color="red", linetype=2)+
   ylim(0,1.5)+
@@ -262,7 +271,7 @@ perch <-plot2
 
 ```{r}
 
-plot_data <- plot_data_main %>% filter (species == "Pikeperch")
+plot_data <- plot_data_main %>% filter (species == "pikeperch")
 
 plot1 <- ggplot(plot_data, aes(x=Year))+
   geom_line(aes(y=Commercial), lwd=1.2, color = "orange") +
@@ -277,9 +286,9 @@ theme(
       axis.line = element_line(), 
       axis.title = element_blank()) + 
     labs(title =substitute(paste("Pikeperch", italic(" (Sander lucioperca)"))))+
-  geom_text(x=2003, y= 0.6, label = '10 t', size=5, fontface=3, color="orange")+
+  geom_text(x=2003, y= 0.6, label = '10 tons', size=5, fontface=3, color="orange")+
   #geom_text(x=2018, y= 0.5, label = 'Scientific CPUE (+error)', size=4, fontface=3, color = "steelblue")+
-  geom_text(x=2019, y= 1.1, label = '19 t', size=5, fontface=3, color= "red")+
+  geom_text(x=2019, y= 1.1, label = '19 tons', size=5, fontface=3, color= "red")+
   geom_segment(aes(x = 2016, y = 	rec_mean[max(dim(plot_data))[1]], xend = 2021, yend = 	rec_mean[max(dim(plot_data))[1]]), color="red", lwd=1.5)+
   geom_segment(aes(x = 1990, y = 	rec_mean[max(dim(plot_data))[1]]/2, xend = 2016, yend = rec_mean[max(dim(plot_data))[1]]),lwd=1, color="red", linetype=2)+
   ylim(0,1.8)+
